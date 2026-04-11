@@ -141,11 +141,11 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
   },
   {
     id:           'ollama',
-    name:         'Ollama (local)',
+    name:         'Ollama',
     type:         'ollama',
     baseUrl:      'http://localhost:11434',
     defaultModel: 'llama3.2',
-    models:       ['llama3.2', 'llama3.1', 'mistral', 'phi4', 'qwen2.5-coder', 'deepseek-r1'],
+    models:       ['gemma4:31b', 'qwen3.5:397b', 'deepseek-v3.1:671b', 'llama3.2', 'llama3.1', 'mistral', 'gemma3:27b', 'gemma3:12b', 'phi4', 'qwen2.5-coder', 'deepseek-r1'],
     requiresKey:     false,
     docsUrl:         'https://ollama.com/library',
   },

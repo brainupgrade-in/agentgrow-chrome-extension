@@ -1,6 +1,11 @@
 # CLAUDE.md — AgentGrow Chrome Extension
 
+**Version: v0.1.0** — submitted to Chrome Web Store for review.
+
 Open-source AI browser assistant that **automates common browser tasks** — filling forms, writing email drafts, creating/editing/summarizing documents, navigating complex sites — to save users time. Connects to **any LLM provider** (OpenRouter, OpenAI, Anthropic, Groq, Ollama, or any OpenAI-compatible endpoint) via user-supplied API URL + key. No subscriptions. No vendor lock-in.
+
+- **Extension homepage:** https://devops.gheware.com/agentgrow/
+- **GitHub:** https://github.com/brainupgrade-in/agentgrow-chrome-extension
 
 **Full design (architecture, data models, streaming, reliability, test suite):** `agentgrow.io-chrome-extension-design.md`  
 **Reference studies:** `abacusai-chrome-ext.md`, `chrome-extensions-dev-best-practices.md`
@@ -18,21 +23,22 @@ Build a Chrome extension (Manifest V3) that helps users automate repetitive brow
 - **Site Navigation** — find information on complex sites, answer questions about page content
 - **Data Extraction** — pull structured data from any page into usable formats
 
-### Features
+### Implemented Features (v0.1.0)
 1. **Side panel chat with streaming** — persistent AI chat alongside any webpage; SSE streaming (OpenAI-compatible providers) + NDJSON streaming (Ollama) via named Port `llm-stream`
 2. **Conversation persistence** — active conversation saved to `chrome.storage.local`, restored on panel reopen
-3. **Smart context** — auto-reads page content + text selection; no manual toggles needed
+3. **Smart auto-context** — auto-reads page content + text selection automatically; no manual toggles needed
 4. **Multi-model dropdown** — switch models in 1 click; shows all preset models per provider
 5. **Chat UX** — New Chat button, copy message to clipboard, retry failed messages, timestamps on hover
-6. **DOM write** — form fill (React/Angular/Vue compatible via native setter + `InputEvent` + full event suite), contenteditable support (Telegram, Slack, Gmail), text highlight, cursor insert
-7. **DOM click & navigate** — click any button/link by CSS selector, scroll into view, React-compatible event dispatch
+6. **DOM write** — form fill (React/Angular/Vue compatible via native setter + `InputEvent` + full event suite), contenteditable support (Telegram, Slack, Gmail, Notion), text highlight, cursor insert
+7. **DOM click & navigate** — click any button/link by CSS selector, scrollIntoView, React-compatible MouseEvent dispatch
 8. **Smart selector resolution** — 5-level fallback: id → name → aria-label → placeholder → positional
 9. **Action safety mode** — "Ask before acting" (default, shows approve/cancel UI) vs "Auto-act" with persistent risk warning
-10. **Provider management** — add/edit/delete any OpenAI-compatible endpoint or Ollama; 7 built-in presets; save confirmation toast; provider selection persisted to `chrome.storage.local`
-11. **Private network support** — test connection fallback via tab execution for local/private IP servers (bypasses service worker fetch restrictions)
-12. **Friendly error messages** — HTTP errors (401/429/404/5xx) parsed into human-readable explanations with retry button
-13. **Error boundary** — wraps entire side panel; React crashes show recovery UI instead of blank screen
-14. **Page reader** — extracts fillable fields with verified selectors, clickable elements with selectors, headings, text content, contenteditable detection, UI noise filtering, line deduplication
+10. **Provider management** — add/edit/delete any OpenAI-compatible endpoint or Ollama; 7 built-in presets (OpenRouter, OpenAI, Anthropic, Groq, Google Gemini, Ollama, Custom); save confirmation toast; provider selection persisted to `chrome.storage.local`
+11. **Ollama Cloud support** — api.ollama.com with API key; auto-shows key field for non-localhost Ollama URLs
+12. **Private network support** — test connection fallback via tab execution for 192.168.*/10.*/172.16.* servers (bypasses service worker fetch restrictions)
+13. **Friendly error messages** — 401 → "Invalid API key", 429 → "Rate limited", 404 → "Model not found", 5xx → "Server error"; retry button on all errors
+14. **Error boundary** — wraps entire side panel; React crashes show recovery UI instead of blank screen
+15. **Page reader** — extracts fillable fields + clickable elements with verified CSS selectors, contenteditable detection, UI noise filtering, line deduplication
 
 ---
 
@@ -69,7 +75,7 @@ Side Panel (React)  ←═══ Port ════════ Service Worker  �
 - `src/background/` — Service Worker: message router, LLM calls, **ProviderManager**, **KeyVault**, DOM relay, auth
 - `src/sidepanel/` — React app: chat UI, settings, provider form, sign-in gate
   - `components/ErrorBoundary.tsx` — React error boundary wrapping entire side panel
-- `src/content/` — Content script: **DOM write only** — form fill, click, highlight, insert (reads done via `chrome.scripting.executeScript` inline from service worker)
+- `src/content/` — Content script: **DOM write only** — form fill, click, highlight, insert + `__PING__` readiness check (reads done via `chrome.scripting.executeScript` inline from service worker)
 - `src/options/` — Options page: privacy dashboard, audit log, about
 - `src/core/` — Shared: provider interfaces, **dom types**, canonical types, utilities
 
@@ -100,10 +106,18 @@ Presets defined in `src/core/types/provider.ts` (`PROVIDER_PRESETS`). Each prese
 
 ```
 dist/             built extension — load unpacked from here (ID: gdjoeliamfdblfefkcjcbipfcdoddebc)
+store-listing.md  CWS listing copy + privacy disclosures
+store-assets/     CWS graphics: icon-128, screenshots (5), promo tiles, marquee
+agentgrow-v0.1.0.zip   CWS submission package
+SHA256SUMS.txt    SHA-256 hash of the submission zip
 app/              full extension source (Vite + crxjs, run all commands from here)
+  scripts/
+    zip.mjs           CWS zip builder (pnpm build:zip)
   src/
     background/
-      index.ts          service worker — message router, LLM streaming (Port), DOM reads (readPageDirect, readSelectionDirect), DOM clicks (clickDirect), DOM fills (fillFormDirect), auth gate
+      index.ts          service worker — message router, LLM streaming (Port), DOM reads
+                        (readPageDirect, readSelectionDirect), DOM clicks (clickDirect),
+                        DOM fills (fillFormDirect), private network fallback, auth gate
       AuthService.ts    Google OAuth2 via chrome.identity
       ProviderManager.ts provider CRUD, storage, default management
       KeyVault.ts       AES-GCM-256 encrypted API key storage
@@ -112,7 +126,7 @@ app/              full extension source (Vite + crxjs, run all commands from her
       components/
         ErrorBoundary.tsx React error boundary wrapping entire side panel
       views/
-        ChatView.tsx        chat shell + smart context (auto page/selection)
+        ChatView.tsx        chat shell + smart auto-context (page/selection)
         SignInView.tsx       Google sign-in gate
         SettingsView.tsx     provider list + about links
         ProviderFormView.tsx add/edit provider with 7 presets
@@ -124,7 +138,8 @@ app/              full extension source (Vite + crxjs, run all commands from her
       utils/
         messaging.ts        typed sendMessage() helper
     content/
-      index.ts          DOM write only — fill forms, click elements, highlight, insert text
+      index.ts          DOM WRITE only — fill forms, click elements, highlight, insert text
+                        + __PING__ handler for content script readiness check
     options/
       main.tsx          settings page stub
     core/
@@ -140,6 +155,8 @@ app/              full extension source (Vite + crxjs, run all commands from her
   manifest.json   full MV3 manifest with oauth2 block
   package.json    pnpm deps
 ```
+
+**Note:** No `popup/` directory — popup was removed; side panel is the primary UI.
 
 **Run from `app/` directory for all commands below.**
 
@@ -261,7 +278,7 @@ Hard rules enforced in every PR. See design doc §9 for threat model and full CS
 34. Form fills target `<input>`, `<textarea>`, `<select>`, and `contenteditable` elements. Click targets include `<button>`, `<a>`, `<input type="submit">`, and any element with a click handler.
 35. Validate CSS selectors with a try/catch before querying (`document.querySelector` throws on bad selectors).
 36. Use the native value setter + dispatching `InputEvent` + full event suite (`focus`, `input`, `change`, `blur`) for React/Angular/Vue-compatible form fills — never `el.setAttribute('value', …)`.
-37. `DOM_FILL_FORM` and `DOM_CLICK` instructions originate from the service worker (after auth gate) — never directly from the page.
+37. `DOM_FILL_FORM`, `DOM_CLICK`, and other DOM write message types originate from the service worker (after auth gate) — never directly from the page.
 38. Text highlighted via `<mark class="agentgrow-highlight">` must be clearable; never remove marks without `parent.normalize()` to avoid orphan text nodes.
 39. `insertTextAtCursor` uses `document.execCommand('insertText')` only for contenteditable — deprecated but still the only safe cross-framework method; guard with `isContentEditable` check.
 
@@ -398,28 +415,32 @@ First-class features — not afterthoughts. Full specification in design doc §6
 
 ## Development Phases
 
-### Phase 1 — MVP (current — in progress)
+### Phase 1 — MVP (v0.1.0 — submitted to CWS for review)
 - ✅ Google authentication (chrome.identity OAuth2)
 - ✅ Provider management (7 presets: OpenRouter, OpenAI, Anthropic, Groq, Gemini, Ollama, Custom)
 - ✅ Settings UI — inline in side panel (gear icon left of logo)
 - ✅ Provider/model picker in chat header (OpenCode-familiar `provider › model`)
 - ✅ Live DOM read — structured extraction (headings, fillable fields with selectors, clickable elements, code blocks, links, selection, contenteditable detection, UI noise filtering)
-- ✅ Live DOM write — form fill (React/Angular/Vue-compatible), contenteditable (Telegram/Slack/Gmail), text highlight + clear, cursor insert
-- ✅ DOM click & navigate — click buttons/links by CSS selector, scroll into view, React-compatible event dispatch
+- ✅ Live DOM write — form fill (React/Angular/Vue-compatible), contenteditable (Telegram/Slack/Gmail/Notion), text highlight + clear, cursor insert
+- ✅ DOM click & navigate — click buttons/links by CSS selector, scrollIntoView, React-compatible MouseEvent dispatch
 - ✅ Smart selector resolution — 5-level fallback (id → name → aria-label → placeholder → positional)
 - ✅ Action safety mode — "Ask before acting" (default) vs "Auto-act" with persistent risk warning
-- ✅ Smart context — auto-reads page + selection, no manual toggles
+- ✅ Smart auto-context — auto-reads page + selection, no manual toggles
 - ✅ LLM streaming chat — SSE (OpenAI-compatible) + NDJSON (Ollama) via named Port `llm-stream`
 - ✅ Conversation persistence — active conversation saved to chrome.storage.local, restored on panel reopen
-- ✅ Chat UX — New Chat, copy message, retry failed, timestamps on hover, friendly error messages with retry button
+- ✅ Chat UX — New Chat, copy message, retry failed, timestamps on hover, friendly error messages (401/429/404/5xx) with retry button
+- ✅ Multi-model dropdown — switch models in 1 click, shows all preset models per provider
 - ✅ Error boundary wrapping entire side panel
 - ✅ Save confirmation toast after provider test
 - ✅ Provider selection persisted to chrome.storage.local
-- ✅ Private network support — test connection fallback via tab execution for local/private IP servers
+- ✅ Private network support — test connection fallback via tab execution for 192.168.*/10.*/172.16.* servers
+- ✅ Ollama Cloud support — api.ollama.com with API key, auto-shows key field for non-localhost
+- ✅ Page reader — fillable fields + clickable elements with verified CSS selectors, contenteditable detection, UI noise filtering, line deduplication
+- ✅ CWS submission — v0.1.0 zip uploaded, store listing + screenshots + privacy disclosures prepared
 - ⬜ Multi-tab group summary
 - ⬜ Prompt templates
 - ⬜ Full test suite + reliability e2e
-- ⬜ CI/CD, CWS submission
+- ⬜ CI/CD pipeline
 
 ### Phase 2 — Agentic
 Context menu integration, AI form-filling via chat command, structured data extraction to clipboard/JSON, tab group research briefs.
@@ -440,6 +461,23 @@ Multi-provider routing, prompt chaining, scheduled tasks, Firefox port, import/e
 7. Update version badge on `devops.gheware.com/agentgrow/`
 
 **Semver guidance:** PATCH = bug fixes; MINOR = new features; MAJOR = manifest permission changes (triggers CWS re-review) or breaking storage format changes.
+
+---
+
+## CWS Store Assets
+
+All assets for Chrome Web Store submission are prepared and included in the repo:
+
+| Asset | Location |
+|-------|----------|
+| Store listing copy + privacy disclosures | `store-listing.md` |
+| Store icon (128x128) | `store-assets/store-icon-128.png` |
+| Screenshots (5) | `store-assets/screenshot-{1..5}.png` |
+| Promo tiles (440x280, 920x680, 1400x560) | `store-assets/promo-tile-*.png` |
+| Marquee promo (1400x560) | `store-assets/marquee-promo-1400x560.png` |
+| Submission zip | `agentgrow-v0.1.0.zip` |
+| Zip hash | `SHA256SUMS.txt` |
+| Zip build script | `app/scripts/zip.mjs` |
 
 ---
 

@@ -255,8 +255,9 @@ export function ProviderFormView({ editing, onBack, onSaved }: ProviderFormViewP
           )}
         </Field>
 
-        {/* API Key */}
-        {(preset?.requiresKey || form.presetId === 'custom' || isEdit) && (
+        {/* API Key — show when preset requires it, custom, edit, or non-localhost Ollama */}
+        {(preset?.requiresKey || form.presetId === 'custom' || isEdit ||
+          (form.presetId === 'ollama' && !form.baseUrl.includes('localhost') && !form.baseUrl.includes('127.0.0.1'))) && (
           <Field
             label={isEdit && editing?.hasApiKey ? 'API Key (leave blank to keep current)' : 'API Key'}
             hint={

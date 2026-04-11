@@ -8,6 +8,10 @@ node_modules/
 abacusai-chrome-ext.md
 chrome-extensions-dev-best-practices.md
 agentgrow.io-chrome-extension-design.md
+store-listing.md
+store-assets/
+SHA256SUMS.txt
+agentgrow-*.zip
 
 # ── Claude Code local config ─────────────────────────────────────────────────
 .claude/

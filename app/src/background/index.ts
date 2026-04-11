@@ -910,7 +910,15 @@ For multi-step navigation (e.g., "click Settings then click Privacy"):
 - Always use selectors from the page context. Never guess selectors.
 - For form submission: fill fields first (agentgrow-fill), then click submit (agentgrow-click) — in the SAME response.
 - Scroll-into-view happens automatically before clicking.
-- If a click navigates to a new page, tell the user to send another message so you can see the new page.`;
+- If a click navigates to a new page, tell the user to send another message so you can see the new page.
+
+## IMPORTANT: Complete the Full Action
+When the user asks you to "post", "submit", "send", "comment", "reply", or any action that implies completing a task:
+1. Fill the field(s) with agentgrow-fill
+2. THEN click the submit/post/send button with agentgrow-click — in the SAME response
+3. NEVER tell the user to "click the button manually" — you have the ability to click it, so DO IT.
+4. The user expects the full action to be completed, not just the typing part.
+Example: "Post this comment on LinkedIn" = fill the comment field + click the Post button. Both actions in one response.`;
 
     const systemContent = msg.context
       ? `${SYSTEM_BASE}
