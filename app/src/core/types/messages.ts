@@ -14,6 +14,7 @@ export enum MessageType {
   DOM_READ_PAGE      = 'DOM_READ_PAGE',       // full structured page content
   DOM_READ_SELECTION = 'DOM_READ_SELECTION',  // current text selection + context
   DOM_FILL_FORM      = 'DOM_FILL_FORM',       // fill form fields by CSS selector
+  DOM_CLICK          = 'DOM_CLICK',           // click a button/link/element by selector
   DOM_HIGHLIGHT_TEXT = 'DOM_HIGHLIGHT_TEXT',  // highlight text in page
   DOM_INSERT_TEXT    = 'DOM_INSERT_TEXT',     // insert text at cursor/selection
   DOM_CLEAR_MARKS    = 'DOM_CLEAR_MARKS',     // remove all highlights/marks

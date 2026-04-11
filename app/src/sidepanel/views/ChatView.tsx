@@ -1,5 +1,5 @@
 import { useEffect, useState, useRef, useCallback } from 'react';
-import { Settings, ChevronDown, Check, FileText, Loader2, Square, RotateCcw, Copy, CheckCheck, MessageSquarePlus } from 'lucide-react';
+import { Settings, ChevronDown, Check, FileText, Loader2, Square, RotateCcw, Copy, CheckCheck, MessageSquarePlus, ShieldCheck, ShieldAlert, AlertTriangle } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import rehypeSanitize from 'rehype-sanitize';
@@ -36,6 +36,12 @@ export function ChatView({ user, onSignOut, onSettings }: ChatViewProps) {
   const [conversationId, setConversationId] = useState<string>(() => crypto.randomUUID());
   const [isGenerating, setIsGenerating] = useState(false);
 
+  // Action safety mode: 'ask' = confirm before page actions, 'auto' = act immediately
+  const [actionMode, setActionMode] = useState<'ask' | 'auto'>('ask');
+  const actionModeRef = useRef(actionMode);
+  actionModeRef.current = actionMode;
+  const [pendingActions, setPendingActions] = useState<string | null>(null);
+
   const dropdownRef  = useRef<HTMLDivElement>(null);
   const textareaRef  = useRef<HTMLTextAreaElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -43,6 +49,14 @@ export function ChatView({ user, onSignOut, onSettings }: ChatViewProps) {
   const requestIdRef = useRef<string | null>(null);
 
   useEffect(() => { void load(); }, [load]);
+
+  // Restore action mode preference on mount
+  useEffect(() => {
+    chrome.storage.local.get('actionMode').then(stored => {
+      const mode = stored['actionMode'] as 'ask' | 'auto' | undefined;
+      if (mode) setActionMode(mode);
+    }).catch(() => {});
+  }, []);
 
   // Restore last conversation on mount
   useEffect(() => {
@@ -104,10 +118,20 @@ export function ChatView({ user, onSignOut, onSettings }: ChatViewProps) {
       } else if (msg.type === 'done') {
         setIsGenerating(false);
         requestIdRef.current = null;
-        // Auto-execute form fill commands from the response
+        // Check for page actions in the response
         setMessages(prev => {
           const last = prev[prev.length - 1];
-          if (last?.role === 'assistant') void executeFormFills(last.content);
+          if (last?.role === 'assistant') {
+            const hasActions = /```agentgrow-(fill|click)\s*\n/g.test(last.content);
+            if (hasActions) {
+              // In 'auto' mode, execute immediately; in 'ask' mode, queue for confirmation
+              if (actionModeRef.current === 'auto') {
+                void executeActions(last.content);
+              } else {
+                setPendingActions(last.content);
+              }
+            }
+          }
           return prev;
         });
       } else if (msg.type === 'error') {
@@ -143,6 +167,28 @@ export function ChatView({ user, onSignOut, onSettings }: ChatViewProps) {
   const displayLabel = activeProvider
     ? `${activeProvider.name}  ›  ${activeModel ?? activeProvider.model}`
     : 'No provider';
+
+  function toggleActionMode() {
+    const next = actionMode === 'ask' ? 'auto' : 'ask';
+    setActionMode(next);
+    chrome.storage.local.set({ actionMode: next }).catch(() => {});
+  }
+
+  function approveActions() {
+    if (pendingActions) {
+      void executeActions(pendingActions);
+      setPendingActions(null);
+    }
+  }
+
+  function rejectActions() {
+    setPendingActions(null);
+    setMessages(prev => [...prev, {
+      id: crypto.randomUUID(), role: 'assistant',
+      content: '> Action cancelled by user.',
+      timestamp: Date.now(),
+    }]);
+  }
 
   function autoResize(el: HTMLTextAreaElement) {
     el.style.height = 'auto';
@@ -217,35 +263,68 @@ export function ChatView({ user, onSignOut, onSettings }: ChatViewProps) {
         ];
         if (p.description) pageParts.push(`Description: ${p.description}`);
 
-        // Include form info so the LLM knows what fields are available
+        // ── ACTIONABLE ELEMENTS (most important for the LLM) ──
+        // Structured as a clear inventory so the LLM knows exactly what it can interact with
+
+        // Form fields — each with a verified CSS selector
+        const allFields: Array<{ label: string; selector: string; type: string; value: string; required: boolean; placeholder: string }> = [];
         if (p.forms.length) {
-          pageParts.push('\nForms on page:');
           p.forms.forEach(f => {
-            pageParts.push(`  Form: ${f.name}`);
             f.fields.forEach(field => {
-              const parts = [`    - ${field.label || field.name}`];
-              parts.push(`[selector: ${field.selector}]`);
-              parts.push(`(${field.type})`);
-              if (field.currentValue) parts.push(`current: "${field.currentValue}"`);
-              if (field.required) parts.push('*required');
-              if (field.placeholder) parts.push(`placeholder: "${field.placeholder}"`);
-              pageParts.push(parts.join(' '));
+              allFields.push({
+                label: field.label || field.name || field.placeholder || 'unnamed',
+                selector: field.selector,
+                type: field.type,
+                value: field.currentValue || '',
+                required: field.required,
+                placeholder: field.placeholder || '',
+              });
             });
           });
         }
 
-        // Only include full text if no selection was captured
-        if (!context) {
-          if (p.headings.length) {
-            pageParts.push('\nHeadings:');
-            p.headings.forEach(h => pageParts.push(`${'#'.repeat(h.level)} ${h.text}`));
-          }
-          pageParts.push('\nContent:', p.mainText);
+        if (allFields.length) {
+          pageParts.push('\n## FILLABLE FIELDS (use these exact selectors with agentgrow-fill)');
+          allFields.forEach((f, i) => {
+            const parts = [`${i + 1}. "${f.label}"`];
+            parts.push(`→ selector: \`${f.selector}\``);
+            parts.push(`(${f.type})`);
+            if (f.value) parts.push(`[current: "${f.value.slice(0, 50)}"]`);
+            if (f.required) parts.push('[required]');
+            if (f.placeholder) parts.push(`[placeholder: "${f.placeholder}"]`);
+            pageParts.push(parts.join(' '));
+          });
         }
 
-        pageParts.push('=== END PAGE CONTEXT ===');
+        // Clickable elements — each with a verified CSS selector
+        const clickables = (p as unknown as Record<string, unknown>)['clickables'] as Array<{ text: string; selector: string; tag: string; href?: string }> | undefined;
+        if (clickables?.length) {
+          pageParts.push('\n## CLICKABLE ELEMENTS (use these exact selectors with agentgrow-click)');
+          clickables.forEach((c, i) => {
+            const parts = [`${i + 1}. "${c.text}"`];
+            parts.push(`→ selector: \`${c.selector}\``);
+            parts.push(`(${c.tag})`);
+            if (c.href) parts.push(`[navigates to: ${c.href}]`);
+            pageParts.push(parts.join(' '));
+          });
+        }
 
-        // If we had selection context, append page context (with forms) after it
+        if (!allFields.length && !clickables?.length) {
+          pageParts.push('\n[No interactive elements detected on this page]');
+        }
+
+        // ── PAGE TEXT CONTENT (for answering questions) ──
+        if (!context) {
+          if (p.headings.length) {
+            pageParts.push('\n## PAGE STRUCTURE');
+            p.headings.forEach(h => pageParts.push(`${'#'.repeat(h.level)} ${h.text}`));
+          }
+          pageParts.push('\n## PAGE TEXT CONTENT', p.mainText);
+        }
+
+        pageParts.push('\n=== END PAGE CONTEXT ===');
+
+        // If we had selection context, append page context after it
         context = context
           ? context + '\n\n' + pageParts.join('\n')
           : pageParts.join('\n');
@@ -267,8 +346,9 @@ export function ChatView({ user, onSignOut, onSettings }: ChatViewProps) {
     });
   }
 
-  /** Parse and execute ```agentgrow-fill code blocks from assistant output */
-  async function executeFormFills(content: string) {
+  /** Parse and execute agentgrow-fill and agentgrow-click code blocks */
+  async function executeActions(content: string) {
+    // ── Form fills ──
     const fillRegex = /```agentgrow-fill\s*\n([\s\S]*?)```/g;
     let match;
     while ((match = fillRegex.exec(content)) !== null) {
@@ -279,7 +359,6 @@ export function ChatView({ user, onSignOut, onSettings }: ChatViewProps) {
         })).min(1).max(50);
         const instructions = FillSchema.parse(JSON.parse(match[1]));
 
-        // Try standard form fill first
         const res = await sendMessage<{ applied: number; errors: string[] }>({
           type:    MessageType.DOM_FILL_FORM,
           source:  'sidepanel',
@@ -289,19 +368,15 @@ export function ChatView({ user, onSignOut, onSettings }: ChatViewProps) {
         let applied = res.data?.applied ?? 0;
         const errors = res.data?.errors ?? [];
 
-        // For any failed fills, try DOM_INSERT_TEXT (handles contenteditable)
         if (errors.length > 0) {
           for (const instr of instructions) {
-            // If this selector failed in form fill, try clicking + inserting
             if (errors.some(e => e.includes(instr.selector))) {
               const insertRes = await sendMessage<{ applied: number; errors: string[] }>({
                 type:    MessageType.DOM_INSERT_TEXT,
                 source:  'sidepanel',
                 payload: { windowId: ctx.windowId, text: instr.value, selector: instr.selector },
               });
-              if (insertRes.success && insertRes.data?.applied) {
-                applied++;
-              }
+              if (insertRes.success && insertRes.data?.applied) applied++;
             }
           }
         }
@@ -314,9 +389,33 @@ export function ChatView({ user, onSignOut, onSettings }: ChatViewProps) {
           content: applied > 0 ? `> ${status}` : `> **${status}**`,
           timestamp: Date.now(),
         }]);
-      } catch {
-        // Skip malformed fill blocks
-      }
+      } catch { /* skip malformed */ }
+    }
+
+    // ── Click actions ──
+    const clickRegex = /```agentgrow-click\s*\n([\s\S]*?)```/g;
+    while ((match = clickRegex.exec(content)) !== null) {
+      try {
+        const ClickSchema = z.array(z.string().min(1).max(500)).min(1).max(10);
+        const selectors = ClickSchema.parse(JSON.parse(match[1]));
+
+        const res = await sendMessage<{ applied: number; errors: string[] }>({
+          type:    MessageType.DOM_CLICK,
+          source:  'sidepanel',
+          payload: { windowId: ctx.windowId, selectors },
+        });
+
+        const clicked = res.data?.applied ?? 0;
+        const errors = res.data?.errors ?? [];
+        const status = clicked > 0
+          ? `✓ Clicked ${clicked} element(s)`
+          : `✗ Could not click: ${errors.join(', ')}`;
+        setMessages(prev => [...prev, {
+          id: crypto.randomUUID(), role: 'assistant',
+          content: clicked > 0 ? `> ${status}` : `> **${status}**`,
+          timestamp: Date.now(),
+        }]);
+      } catch { /* skip malformed */ }
     }
   }
 
@@ -452,7 +551,48 @@ export function ChatView({ user, onSignOut, onSettings }: ChatViewProps) {
         )}
       </div>
 
-      {/* ── Auto-context indicator (always reads page, no toggles needed) ─── */}
+      {/* ── Pending action confirmation (Ask before acting mode) ────────── */}
+      {pendingActions && (
+        <div className="px-3 py-2 bg-ag-warn/10 border-t border-ag-warn/30 shrink-0">
+          <div className="flex items-center gap-2 text-xs">
+            <ShieldCheck size={14} className="text-ag-warn shrink-0" />
+            <span className="flex-1 text-ag-text font-medium">AgentGrow wants to act on the page</span>
+          </div>
+          <p className="text-[10px] text-ag-sub mt-1 mb-2">
+            Review the action above, then approve or cancel.
+          </p>
+          <div className="flex gap-2">
+            <button
+              onClick={approveActions}
+              className="flex-1 bg-ag-accent text-ag-bg text-xs font-semibold py-1.5 rounded-lg hover:bg-ag-success transition-colors"
+            >
+              Approve & Execute
+            </button>
+            <button
+              onClick={rejectActions}
+              className="flex-1 bg-ag-muted text-ag-text text-xs font-semibold py-1.5 rounded-lg hover:bg-ag-border transition-colors"
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* ── Risk warning (Act without asking mode) ─────────────────────── */}
+      {actionMode === 'auto' && !pendingActions && (
+        <div className="px-3 py-1.5 bg-ag-error/8 border-t border-ag-error/20 shrink-0 flex items-center gap-2">
+          <AlertTriangle size={11} className="text-ag-error shrink-0" />
+          <span className="text-[10px] text-ag-error/80 flex-1">
+            Auto-acting enabled — AgentGrow will click and type on pages without asking
+          </span>
+          <button
+            onClick={toggleActionMode}
+            className="text-[10px] text-ag-error underline shrink-0 hover:text-ag-text"
+          >
+            Switch to safe mode
+          </button>
+        </div>
+      )}
 
       {/* ── Input area ─────────────────────────────────────────────────────── */}
       <div className="px-3 py-3 border-t border-ag-border bg-ag-surface shrink-0">
@@ -492,12 +632,26 @@ export function ChatView({ user, onSignOut, onSettings }: ChatViewProps) {
           )}
         </div>
 
-        {/* Auto-context indicator */}
+        {/* Action mode + context indicator */}
         <div className="flex items-center gap-1.5 mt-1.5 px-1">
           <FileText size={10} className="text-ag-accent shrink-0" />
-          <span className="text-[10px] text-ag-sub truncate">
-            Page context auto-included with every message
+          <span className="text-[10px] text-ag-sub truncate flex-1">
+            Page context auto-included
           </span>
+          <button
+            onClick={toggleActionMode}
+            title={actionMode === 'ask' ? 'Ask before acting (safe) — click to change' : 'Act without asking — click to change'}
+            className={`flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded border transition-all
+              ${actionMode === 'ask'
+                ? 'border-ag-accent/30 text-ag-accent bg-ag-accent/5'
+                : 'border-ag-error/30 text-ag-error bg-ag-error/5'
+              }`}
+          >
+            {actionMode === 'ask'
+              ? <><ShieldCheck size={9} /> Ask first</>
+              : <><ShieldAlert size={9} /> Auto-act</>
+            }
+          </button>
         </div>
       </div>
     </div>

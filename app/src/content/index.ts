@@ -28,63 +28,114 @@ const MARK_CLASS = 'agentgrow-highlight';
 
 // ── WRITE: Form fill ──────────────────────────────────────────────────────────
 
+/**
+ * Resolve element — tries selector directly, then fallbacks by name/aria-label/id/placeholder.
+ */
+function resolveElement(selector: string): Element | null {
+  try { const el = document.querySelector(selector); if (el) return el; } catch { /* try fallbacks */ }
+  const nameMatch = selector.match(/\[name="([^"]+)"\]/);
+  if (nameMatch) { const el = document.querySelector(`[name="${nameMatch[1]}"]`); if (el) return el; }
+  const ariaMatch = selector.match(/\[aria-label="([^"]+)"\]/);
+  if (ariaMatch) { const el = document.querySelector(`[aria-label="${ariaMatch[1]}"]`); if (el) return el; }
+  const idMatch = selector.match(/#([\w-]+)/);
+  if (idMatch) { const el = document.getElementById(idMatch[1]); if (el) return el; }
+  const phMatch = selector.match(/\[placeholder="([^"]+)"\]/);
+  if (phMatch) { const el = document.querySelector(`[placeholder="${phMatch[1]}"]`); if (el) return el; }
+  return null;
+}
+
+/**
+ * Dispatch comprehensive events for React/Angular/Vue/vanilla compatibility.
+ */
+function dispatchFillEvents(el: HTMLElement, value: string) {
+  el.dispatchEvent(new FocusEvent('focus', { bubbles: true }));
+  el.dispatchEvent(new FocusEvent('focusin', { bubbles: true }));
+  el.dispatchEvent(new InputEvent('input', { bubbles: true, cancelable: true, inputType: 'insertText', data: value }));
+  el.dispatchEvent(new Event('change', { bubbles: true }));
+  el.dispatchEvent(new KeyboardEvent('keydown', { bubbles: true, key: 'Unidentified' }));
+  el.dispatchEvent(new KeyboardEvent('keyup', { bubbles: true, key: 'Unidentified' }));
+  el.dispatchEvent(new FocusEvent('blur', { bubbles: true }));
+  el.dispatchEvent(new FocusEvent('focusout', { bubbles: true }));
+}
+
 function fillForms(instructions: FormFillInstruction[]): DomWriteResult {
   const errors: string[] = [];
   let applied = 0;
 
   for (const { selector, value } of instructions) {
-    let el: Element | null = null;
-    try {
-      el = document.querySelector(selector);
-    } catch {
-      errors.push(`Invalid selector: ${selector}`);
-      continue;
-    }
+    const el = resolveElement(selector);
     if (!el) { errors.push(`Element not found: ${selector}`); continue; }
 
-    // Handle contenteditable elements (Telegram, Slack, Gmail compose, etc.)
+    // ── Contenteditable (Telegram, Slack, Gmail compose, Notion, etc.) ──
     if (el instanceof HTMLElement && el.isContentEditable) {
-      el.focus();
-      // Clear existing content and insert new text
+      el.focus(); el.click();
       const sel = window.getSelection();
       if (sel) {
-        sel.selectAllChildren(el);
+        const range = document.createRange();
+        range.selectNodeContents(el);
+        sel.removeAllRanges(); sel.addRange(range);
         sel.deleteFromDocument();
       }
       document.execCommand('insertText', false, value);
-      el.dispatchEvent(new Event('input', { bubbles: true }));
+      el.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'insertText', data: value }));
       applied++;
       continue;
     }
 
-    if (!(el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement || el instanceof HTMLSelectElement)) {
-      errors.push(`Element is not a form field: ${selector}`);
+    // ── Standard inputs & textareas ──
+    if (el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement) {
+      el.scrollIntoView({ behavior: 'instant', block: 'center' });
+      el.focus(); el.click();
+
+      const proto = el instanceof HTMLInputElement ? HTMLInputElement.prototype : HTMLTextAreaElement.prototype;
+      const nativeSetter = Object.getOwnPropertyDescriptor(proto, 'value')?.set;
+      if (nativeSetter) { nativeSetter.call(el, value); } else { el.value = value; }
+
+      try { el.selectionStart = el.selectionEnd = value.length; } catch { /* some types don't support selection */ }
+      dispatchFillEvents(el, value);
+      applied++;
       continue;
     }
 
-    try {
-      if (el instanceof HTMLSelectElement) {
-        el.value = value;
-        el.dispatchEvent(new Event('change', { bubbles: true }));
-      } else {
-        // React-compatible: use native setter to bypass synthetic event system
-        const proto = el instanceof HTMLInputElement
-          ? HTMLInputElement.prototype
-          : HTMLTextAreaElement.prototype;
-        const nativeSetter = Object.getOwnPropertyDescriptor(proto, 'value')?.set;
-        if (nativeSetter) {
-          nativeSetter.call(el, value);
-        } else {
-          (el as HTMLInputElement).value = value;
-        }
-        el.dispatchEvent(new Event('input',  { bubbles: true }));
-        el.dispatchEvent(new Event('change', { bubbles: true }));
-      }
+    // ── Select dropdowns (match by value or text) ──
+    if (el instanceof HTMLSelectElement) {
       el.focus();
-      applied++;
-    } catch (e) {
-      errors.push(`Failed to fill ${selector}: ${String(e)}`);
+      let matched = false;
+      for (const opt of Array.from(el.options)) {
+        if (opt.value === value || opt.text.toLowerCase() === value.toLowerCase()) {
+          el.value = opt.value; matched = true; break;
+        }
+      }
+      if (!matched) {
+        for (const opt of Array.from(el.options)) {
+          if (opt.text.toLowerCase().includes(value.toLowerCase())) {
+            el.value = opt.value; matched = true; break;
+          }
+        }
+      }
+      if (matched) {
+        el.dispatchEvent(new Event('change', { bubbles: true }));
+        el.dispatchEvent(new Event('input', { bubbles: true }));
+        applied++;
+      } else {
+        errors.push(`No option matching "${value}" in ${selector}`);
+      }
+      continue;
     }
+
+    // ── Fallback: role="textbox" or custom elements ──
+    if (el instanceof HTMLElement) {
+      el.focus(); el.click();
+      try {
+        document.execCommand('insertText', false, value);
+        applied++;
+      } catch {
+        errors.push(`Cannot fill: ${selector}`);
+      }
+      continue;
+    }
+
+    errors.push(`Not editable: ${selector}`);
   }
 
   return { applied, errors };
@@ -220,10 +271,54 @@ function insertTextAtCursor({ text }: InsertTextInstruction): DomWriteResult {
   return { applied: 0, errors: ['No active input or selection to insert into'] };
 }
 
+// ── WRITE: Insert text into a specific element by selector ───────────────────
+
+function insertTextAtSelector(selector: string, text: string): DomWriteResult {
+  const el = resolveElement(selector);
+  if (!el || !(el instanceof HTMLElement)) return { applied: 0, errors: [`Element not found: ${selector}`] };
+
+  el.focus();
+  el.click();
+
+  // contenteditable
+  if (el.isContentEditable) {
+    // Place cursor at end
+    const range = document.createRange();
+    range.selectNodeContents(el);
+    range.collapse(false);
+    const sel = window.getSelection();
+    sel?.removeAllRanges();
+    sel?.addRange(range);
+    document.execCommand('insertText', false, text);
+    el.dispatchEvent(new Event('input', { bubbles: true }));
+    return { applied: 1, errors: [] };
+  }
+
+  // Standard input/textarea
+  if (el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement) {
+    const nativeSetter = Object.getOwnPropertyDescriptor(
+      el instanceof HTMLInputElement ? HTMLInputElement.prototype : HTMLTextAreaElement.prototype,
+      'value'
+    )?.set;
+    if (nativeSetter) { nativeSetter.call(el, text); } else { el.value = text; }
+    el.dispatchEvent(new Event('input', { bubbles: true }));
+    el.dispatchEvent(new Event('change', { bubbles: true }));
+    return { applied: 1, errors: [] };
+  }
+
+  return { applied: 0, errors: ['Element is not editable'] };
+}
+
 // ── Message listener (WRITE operations only) ─────────────────────────────────
 
 chrome.runtime.onMessage.addListener((msg: unknown, _sender, sendResponse) => {
   const m = msg as { type?: string; payload?: Record<string, unknown> };
+
+  // Ping handler — used by ensureContentScript to check if we're alive
+  if (m.type === '__PING__') {
+    sendResponse({ success: true });
+    return false;
+  }
 
   switch (m.type) {
     case MessageType.DOM_FILL_FORM: {
@@ -234,6 +329,31 @@ chrome.runtime.onMessage.addListener((msg: unknown, _sender, sendResponse) => {
       break;
     }
 
+    case MessageType.DOM_CLICK: {
+      const selectors = (m.payload?.['selectors'] as string[]) ?? [];
+      const errors: string[] = [];
+      let clicked = 0;
+      for (const sel of selectors) {
+        let el: Element | null = null;
+        try { el = document.querySelector(sel); } catch { errors.push(`Invalid selector: ${sel}`); continue; }
+        if (!el) { errors.push(`Element not found: ${sel}`); continue; }
+        if (el instanceof HTMLElement) {
+          el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          el.focus();
+          el.click();
+          // Also dispatch pointer events for React/framework compatibility
+          el.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
+          el.dispatchEvent(new MouseEvent('mouseup', { bubbles: true }));
+          el.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+          clicked++;
+        } else {
+          errors.push(`Not clickable: ${sel}`);
+        }
+      }
+      sendResponse({ success: true, data: { applied: clicked, errors } });
+      break;
+    }
+
     case MessageType.DOM_HIGHLIGHT_TEXT: {
       const result = highlightText(m.payload as unknown as HighlightInstruction);
       sendResponse({ success: true, data: result });
@@ -241,8 +361,16 @@ chrome.runtime.onMessage.addListener((msg: unknown, _sender, sendResponse) => {
     }
 
     case MessageType.DOM_INSERT_TEXT: {
-      const result = insertTextAtCursor(m.payload as unknown as InsertTextInstruction);
-      sendResponse({ success: true, data: result });
+      const payload = m.payload as Record<string, unknown>;
+      // If a selector is provided, click + focus + insert into that specific element
+      if (payload['selector'] && typeof payload['selector'] === 'string') {
+        const result = insertTextAtSelector(payload['selector'], String(payload['text'] ?? ''));
+        sendResponse({ success: true, data: result });
+      } else {
+        // Fallback: insert at current cursor position
+        const result = insertTextAtCursor(payload as unknown as InsertTextInstruction);
+        sendResponse({ success: true, data: result });
+      }
       break;
     }
 

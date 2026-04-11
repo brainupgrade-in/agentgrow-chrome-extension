@@ -16,6 +16,7 @@ import type { AgentGrowResponse } from '../core/types/messages.js';
 // DOM write types relayed to the content script (reads handled inline via executeScript)
 const DOM_WRITE_TYPES = new Set<MessageType>([
   MessageType.DOM_FILL_FORM,
+  MessageType.DOM_CLICK,
   MessageType.DOM_HIGHLIGHT_TEXT,
   MessageType.DOM_INSERT_TEXT,
   MessageType.DOM_CLEAR_MARKS,
@@ -217,22 +218,40 @@ async function readPageDirect(tabId: number): Promise<AgentGrowResponse> {
           if (fields.length) forms.push({ name, fields });
         });
 
-        // ── Standalone inputs (outside forms) + contenteditable ─────────
+        // ── ALL visible inputs/textareas (inside or outside forms) ────────
         const standaloneFields: FormField[] = [];
+        const seenSelectors = new Set(forms.flatMap(f => f.fields.map(ff => ff.selector)));
 
-        // Inputs/textareas not inside a <form>
-        document.querySelectorAll<HTMLInputElement | HTMLTextAreaElement>(
-          'input:not(form input):not([type="hidden"]):not([type="submit"]):not([type="button"]),' +
-          'textarea:not(form textarea)'
+        document.querySelectorAll<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>(
+          'input:not([type="hidden"]):not([type="submit"]):not([type="button"]):not([type="reset"]),' +
+          'textarea,select'
         ).forEach((el, i) => {
-          const selector = el.id ? `#${el.id}` : `[data-agentgrow-standalone="${i}"]`;
-          el.setAttribute('data-agentgrow-standalone', String(i));
-          let label = el.getAttribute('aria-label') ?? el.getAttribute('placeholder') ?? el.name ?? '';
+          const style = getComputedStyle(el);
+          if (style.display === 'none' || style.visibility === 'hidden') return;
+
+          // Build selector — prefer id, then name, then aria-label, then positional
+          const tag = el.tagName.toLowerCase();
+          const selector = el.id ? `#${CSS.escape(el.id)}`
+            : el.name ? `${tag}[name="${CSS.escape(el.name)}"]`
+            : el.getAttribute('aria-label') ? `${tag}[aria-label="${CSS.escape(el.getAttribute('aria-label')!)}"]`
+            : `${tag}:nth-of-type(${i + 1})`;
+
+          // Skip if already captured by form detection
+          if (seenSelectors.has(selector)) return;
+          seenSelectors.add(selector);
+
+          const label = el.getAttribute('aria-label')
+            ?? (el instanceof HTMLSelectElement ? '' : el.placeholder)
+            ?? el.name ?? el.title ?? '';
+
           standaloneFields.push({
-            selector, label, name: el.name || el.id || `standalone-${i}`,
-            type: el instanceof HTMLInputElement ? (el.type || 'text') : 'textarea',
-            placeholder: el.placeholder ?? '', currentValue: el.value,
-            required: el.required, readOnly: el.readOnly,
+            selector, label: label || `${tag} field`,
+            name: el.name || el.id || `field-${i}`,
+            type: el instanceof HTMLInputElement ? (el.type || 'text') : tag,
+            placeholder: el instanceof HTMLSelectElement ? '' : (el.placeholder ?? ''),
+            currentValue: el.value,
+            required: el.required,
+            readOnly: el instanceof HTMLSelectElement ? false : el.readOnly,
           });
         });
 
@@ -258,6 +277,38 @@ async function readPageDirect(tabId: number): Promise<AgentGrowResponse> {
 
         const meta = document.querySelector('meta[name="description"], meta[property="og:description"]');
 
+        // ── Clickable elements (links, buttons, nav items) ──────────
+        type ClickableElement = { text: string; selector: string; tag: string; href?: string };
+        const clickables: ClickableElement[] = [];
+        const clickSeen = new Set<string>();
+
+        // Links
+        document.querySelectorAll<HTMLAnchorElement>('a[href]').forEach((a) => {
+          const style = getComputedStyle(a);
+          if (style.display === 'none' || style.visibility === 'hidden') return;
+          const text = (a.textContent ?? '').replace(/\s+/g, ' ').trim();
+          if (!text || text.length < 2 || clickSeen.has(text)) return;
+          clickSeen.add(text);
+          const href = a.href;
+          if (href.startsWith('javascript:')) return;
+          const selector = a.id ? `#${CSS.escape(a.id)}` : `a[href="${CSS.escape(a.getAttribute('href') ?? '')}"]`;
+          clickables.push({ text: text.slice(0, 60), selector, tag: 'a', href });
+        });
+
+        // Buttons
+        document.querySelectorAll<HTMLButtonElement>('button, [role="button"], input[type="submit"], input[type="button"]').forEach((btn, i) => {
+          const style = getComputedStyle(btn);
+          if (style.display === 'none' || style.visibility === 'hidden') return;
+          const text = (btn.textContent ?? btn.getAttribute('aria-label') ?? btn.getAttribute('value') ?? '').replace(/\s+/g, ' ').trim();
+          if (!text || text.length < 2 || clickSeen.has(text)) return;
+          clickSeen.add(text);
+          const selector = btn.id ? `#${CSS.escape(btn.id)}`
+            : btn.getAttribute('aria-label') ? `[aria-label="${CSS.escape(btn.getAttribute('aria-label')!)}"]`
+            : btn.name ? `button[name="${CSS.escape(btn.name)}"]`
+            : `button:nth-of-type(${i + 1})`;
+          clickables.push({ text: text.slice(0, 60), selector, tag: btn.tagName.toLowerCase() });
+        });
+
         return {
           url: location.href,
           title: document.title,
@@ -266,6 +317,7 @@ async function readPageDirect(tabId: number): Promise<AgentGrowResponse> {
           headings,
           mainText,
           forms,
+          clickables: clickables.slice(0, 40),
           codeBlocks: [] as string[],
           links: [] as Array<{ text: string; href: string }>,
           readAt: Date.now(),
@@ -313,29 +365,277 @@ async function readSelectionDirect(tabId: number): Promise<AgentGrowResponse> {
 }
 
 /**
+ * Fill form fields directly via chrome.scripting.executeScript.
+ * Production-grade: handles React/Angular/Vue, shadow DOM, autocomplete,
+ * complex selectors, and various input types across real-world sites.
+ */
+async function fillFormDirect(
+  tabId: number,
+  instructions: Array<{ selector: string; value: string }>
+): Promise<AgentGrowResponse> {
+  try {
+    const results = await chrome.scripting.executeScript({
+      target: { tabId },
+      args: [instructions],
+      func: (instrs: Array<{ selector: string; value: string }>) => {
+        const errors: string[] = [];
+        let applied = 0;
+
+        /**
+         * Resolve element — tries the selector directly, then common fallbacks.
+         * Handles cases where the LLM-generated selector doesn't match exactly.
+         */
+        function resolveElement(selector: string): Element | null {
+          // Direct match
+          try {
+            const el = document.querySelector(selector);
+            if (el) return el;
+          } catch { /* invalid selector — try fallbacks */ }
+
+          // Fallback: search by name attribute (common for forms)
+          const nameMatch = selector.match(/\[name="([^"]+)"\]/);
+          if (nameMatch) {
+            const el = document.querySelector(`[name="${nameMatch[1]}"]`);
+            if (el) return el;
+          }
+
+          // Fallback: search by aria-label
+          const ariaMatch = selector.match(/\[aria-label="([^"]+)"\]/);
+          if (ariaMatch) {
+            const el = document.querySelector(`[aria-label="${ariaMatch[1]}"]`);
+            if (el) return el;
+          }
+
+          // Fallback: search by id fragment
+          const idMatch = selector.match(/#([\w-]+)/);
+          if (idMatch) {
+            const el = document.getElementById(idMatch[1]);
+            if (el) return el;
+          }
+
+          // Fallback: search by placeholder text
+          const phMatch = selector.match(/\[placeholder="([^"]+)"\]/);
+          if (phMatch) {
+            const el = document.querySelector(`[placeholder="${phMatch[1]}"]`);
+            if (el) return el;
+          }
+
+          return null;
+        }
+
+        /**
+         * Dispatch a full suite of events that covers React, Angular, Vue,
+         * and vanilla JS event listeners. Order matters.
+         */
+        function dispatchEvents(el: HTMLElement, value: string) {
+          // Focus events
+          el.dispatchEvent(new FocusEvent('focus', { bubbles: true }));
+          el.dispatchEvent(new FocusEvent('focusin', { bubbles: true }));
+
+          // Input event (React 16+ listens for this)
+          el.dispatchEvent(new InputEvent('input', {
+            bubbles: true, cancelable: true, inputType: 'insertText', data: value
+          }));
+
+          // Change event (most frameworks listen for this)
+          el.dispatchEvent(new Event('change', { bubbles: true }));
+
+          // Keyboard events (some sites validate via keyup)
+          el.dispatchEvent(new KeyboardEvent('keydown', { bubbles: true, key: 'Unidentified' }));
+          el.dispatchEvent(new KeyboardEvent('keyup', { bubbles: true, key: 'Unidentified' }));
+
+          // Blur to trigger validation
+          el.dispatchEvent(new FocusEvent('blur', { bubbles: true }));
+          el.dispatchEvent(new FocusEvent('focusout', { bubbles: true }));
+        }
+
+        for (const { selector, value } of instrs) {
+          const el = resolveElement(selector);
+          if (!el) { errors.push(`Element not found: ${selector}`); continue; }
+
+          // ── Contenteditable (Telegram, Slack, Gmail, Notion, etc.) ──
+          if (el instanceof HTMLElement && el.isContentEditable) {
+            el.focus();
+            el.click();
+            // Select all existing content and replace
+            const sel = window.getSelection();
+            if (sel) {
+              const range = document.createRange();
+              range.selectNodeContents(el);
+              sel.removeAllRanges();
+              sel.addRange(range);
+              sel.deleteFromDocument();
+            }
+            document.execCommand('insertText', false, value);
+            el.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'insertText', data: value }));
+            applied++;
+            continue;
+          }
+
+          // ── Standard inputs & textareas ──
+          if (el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement) {
+            // Scroll into view + focus (triggers any lazy validation)
+            el.scrollIntoView({ behavior: 'instant', block: 'center' });
+            el.focus();
+            el.click();
+
+            // Use native value setter (bypasses React/Angular/Vue synthetic property)
+            const proto = el instanceof HTMLInputElement
+              ? HTMLInputElement.prototype
+              : HTMLTextAreaElement.prototype;
+            const nativeSetter = Object.getOwnPropertyDescriptor(proto, 'value')?.set;
+
+            if (nativeSetter) {
+              nativeSetter.call(el, value);
+            } else {
+              el.value = value;
+            }
+
+            // Set selection to end of value (important for autocomplete fields)
+            try {
+              el.selectionStart = el.selectionEnd = value.length;
+            } catch { /* some input types don't support selection */ }
+
+            // Dispatch comprehensive event suite
+            dispatchEvents(el, value);
+            applied++;
+            continue;
+          }
+
+          // ── Select dropdowns ──
+          if (el instanceof HTMLSelectElement) {
+            el.focus();
+            // Try exact value match first
+            let matched = false;
+            for (const opt of Array.from(el.options)) {
+              if (opt.value === value || opt.text.toLowerCase() === value.toLowerCase()) {
+                el.value = opt.value;
+                matched = true;
+                break;
+              }
+            }
+            if (!matched) {
+              // Partial text match
+              for (const opt of Array.from(el.options)) {
+                if (opt.text.toLowerCase().includes(value.toLowerCase())) {
+                  el.value = opt.value;
+                  matched = true;
+                  break;
+                }
+              }
+            }
+            if (matched) {
+              el.dispatchEvent(new Event('change', { bubbles: true }));
+              el.dispatchEvent(new Event('input', { bubbles: true }));
+              applied++;
+            } else {
+              errors.push(`No option matching "${value}" in ${selector}`);
+            }
+            continue;
+          }
+
+          // ── Clickable elements with role="textbox" or similar ──
+          if (el instanceof HTMLElement) {
+            el.focus();
+            el.click();
+            // Last resort: try execCommand
+            try {
+              document.execCommand('insertText', false, value);
+              applied++;
+            } catch {
+              errors.push(`Cannot fill: ${selector} (not a standard input)`);
+            }
+            continue;
+          }
+
+          errors.push(`Not editable: ${selector}`);
+        }
+        return { applied, errors };
+      },
+    });
+    const data = results?.[0]?.result;
+    return data ? { success: true, data } : { success: false, error: 'No result from fill script' };
+  } catch (e) {
+    return { success: false, error: `Form fill failed: ${String(e)}` };
+  }
+}
+
+/**
  * Sends a message to the content script running in the adjacent tab.
- * For write operations (fill, highlight, insert), ensures content script is injected.
+ * For write operations — tries content script relay first, falls back to direct execution.
  */
 async function relayToDomScript(
   tabId: number,
   type: MessageType,
   payload: Record<string, unknown>
 ): Promise<AgentGrowResponse> {
+  // Try content script relay first
   try {
     await ensureContentScript(tabId);
-  } catch (e) {
-    return { success: false, error: String(e instanceof Error ? e.message : e) };
+    const response = await new Promise<AgentGrowResponse>(resolve => {
+      chrome.tabs.sendMessage(tabId, { type, payload }, resp => {
+        if (chrome.runtime.lastError) {
+          resolve({ success: false, error: chrome.runtime.lastError.message });
+          return;
+        }
+        resolve((resp as AgentGrowResponse) ?? { success: false, error: 'No response' });
+      });
+    });
+    if (response.success) return response;
+  } catch {
+    // Content script not available — fall through to direct execution
   }
 
-  return new Promise(resolve => {
-    chrome.tabs.sendMessage(tabId, { type, payload }, response => {
-      if (chrome.runtime.lastError) {
-        resolve({ success: false, error: chrome.runtime.lastError.message });
-        return;
-      }
-      resolve((response as AgentGrowResponse) ?? { success: false, error: 'No response from content script' });
+  // Fallback: direct execution for DOM_FILL_FORM
+  if (type === MessageType.DOM_FILL_FORM) {
+    const instructions = (payload['instructions'] as Array<{ selector: string; value: string }>) ?? [];
+    return fillFormDirect(tabId, instructions);
+  }
+
+  // Fallback: direct execution for DOM_INSERT_TEXT with selector
+  if (type === MessageType.DOM_INSERT_TEXT && payload['selector']) {
+    return fillFormDirect(tabId, [{ selector: String(payload['selector']), value: String(payload['text'] ?? '') }]);
+  }
+
+  // Fallback: direct execution for DOM_CLICK
+  if (type === MessageType.DOM_CLICK) {
+    return clickDirect(tabId, (payload['selectors'] as string[]) ?? []);
+  }
+
+  return { success: false, error: 'Cannot access page for this operation' };
+}
+
+/**
+ * Click elements directly via chrome.scripting.executeScript.
+ * Fallback when content script is unavailable.
+ */
+async function clickDirect(tabId: number, selectors: string[]): Promise<AgentGrowResponse> {
+  try {
+    const results = await chrome.scripting.executeScript({
+      target: { tabId },
+      args: [selectors],
+      func: (sels: string[]) => {
+        const errors: string[] = [];
+        let applied = 0;
+        for (const sel of sels) {
+          let el: Element | null = null;
+          try { el = document.querySelector(sel); } catch { errors.push(`Invalid: ${sel}`); continue; }
+          if (!el || !(el instanceof HTMLElement)) { errors.push(`Not found: ${sel}`); continue; }
+          el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          el.focus(); el.click();
+          el.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
+          el.dispatchEvent(new MouseEvent('mouseup', { bubbles: true }));
+          el.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+          applied++;
+        }
+        return { applied, errors };
+      },
     });
-  });
+    const data = results?.[0]?.result;
+    return data ? { success: true, data } : { success: false, error: 'No result' };
+  } catch (e) {
+    return { success: false, error: `Click failed: ${String(e)}` };
+  }
 }
 
 // ─── Message Router ───────────────────────────────────────────────────────────
@@ -441,7 +741,9 @@ async function handleMessage(
       }
 
       const testUrl = type === 'ollama' ? `${baseUrl}/api/tags` : `${baseUrl}/models`;
-      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+      // Only set headers that are needed — Content-Type on GET triggers preflight
+      // which fails on private networks without Access-Control-Allow-Private-Network
+      const headers: Record<string, string> = {};
       if (resolvedKey) headers['Authorization'] = `Bearer ${resolvedKey}`;
 
       try {
@@ -451,6 +753,30 @@ async function handleMessage(
         });
         return { success: res.ok, data: { status: res.status } };
       } catch (e) {
+        // Private network access may block fetch from service worker.
+        // Fallback: try via an active tab using chrome.scripting.executeScript
+        try {
+          const tabs = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
+          if (tabs[0]?.id) {
+            const results = await chrome.scripting.executeScript({
+              target: { tabId: tabs[0].id },
+              args: [testUrl, resolvedKey],
+              func: async (url: string, key: string | null) => {
+                try {
+                  const h: Record<string, string> = {};
+                  if (key) h['Authorization'] = `Bearer ${key}`;
+                  const r = await fetch(url, { signal: AbortSignal.timeout(8000), headers: h });
+                  return { ok: r.ok, status: r.status };
+                } catch (err) {
+                  return { ok: false, status: 0, error: String(err) };
+                }
+              },
+            });
+            const r = results?.[0]?.result as { ok: boolean; status: number; error?: string } | undefined;
+            if (r?.ok) return { success: true, data: { status: r.status } };
+            if (r?.error) return { success: false, error: r.error };
+          }
+        } catch { /* fallback also failed */ }
         return { success: false, error: String(e) };
       }
     }
@@ -522,6 +848,13 @@ You help users move faster by automating repetitive browser work:
 4. Use markdown: headings, lists, bold, code blocks. Keep responses concise unless the user asks for detail.
 5. When the user says "this page", "the page", or "here", they mean the page context below.
 
+## CRITICAL: Selector Accuracy
+- The page context contains sections "FILLABLE FIELDS" and "CLICKABLE ELEMENTS" with **verified CSS selectors** extracted from the live DOM.
+- You MUST use ONLY the exact selectors listed in the context. Copy them character-for-character into your agentgrow-fill or agentgrow-click blocks.
+- NEVER fabricate, guess, or construct selectors on your own. If the element you need is not listed in the context, tell the user "I don't see that element on the page" instead of guessing.
+- If you need to fill a field and you see its selector is textarea[name="q"], use exactly that — not #search, not input[type="text"], not a made-up ID.
+- Before outputting any action block, mentally verify: "Is this selector listed in the FILLABLE FIELDS or CLICKABLE ELEMENTS section?" If not, do not use it.
+
 ## Capabilities
 1. **Read the page** — answer questions, summarize, find information, list items, compare sections
 2. **Fill forms & type text** — write into input fields, textareas, selects, and contenteditable elements (Gmail compose, Slack message box, Telegram input, Notion blocks, etc.)
@@ -549,7 +882,35 @@ This works for:
 - Use the exact CSS selectors from the page context. If no matching field exists, tell the user.
 - For multi-field forms, fill all relevant fields in a single code block.
 - For chat apps and email compose, target the contenteditable message input.
-- If the user provides partial info, fill what you can and ask about the rest.`;
+- If the user provides partial info, fill what you can and ask about the rest.
+
+## Clicking & Navigation (agentgrow-click)
+
+When the user asks you to click a button, follow a link, submit a form, navigate to a section, or interact with any clickable element:
+
+1. Check the "Clickable elements on page" section in the context for available buttons/links and their CSS selectors.
+2. Tell the user what you will click and why.
+3. Output a fenced code block tagged \`agentgrow-click\` with a JSON array of CSS selector strings:
+
+\`\`\`agentgrow-click
+["#submit-btn"]
+\`\`\`
+
+For multi-step navigation (e.g., "click Settings then click Privacy"):
+- Output ONE click block per step. After each click, the page may change — wait for the user's next message to see the updated page context.
+- Do NOT chain multiple navigation clicks in one response unless they are on the same page (e.g., filling a form then clicking Submit).
+
+**Common patterns:**
+- "Click the Submit button" → find the submit button selector, output agentgrow-click
+- "Go to the Settings page" → find the Settings link/button, click it
+- "Fill this form and submit" → output agentgrow-fill for the fields, then agentgrow-click for the submit button
+- "Click the next page button" → find pagination/next button, click it
+
+**Rules:**
+- Always use selectors from the page context. Never guess selectors.
+- For form submission: fill fields first (agentgrow-fill), then click submit (agentgrow-click) — in the SAME response.
+- Scroll-into-view happens automatically before clicking.
+- If a click navigates to a new page, tell the user to send another message so you can see the new page.`;
 
     const systemContent = msg.context
       ? `${SYSTEM_BASE}
@@ -558,7 +919,7 @@ This works for:
 
 ${msg.context}
 
-Use the above context to answer the user's questions. The content is real and current.`
+The FILLABLE FIELDS and CLICKABLE ELEMENTS sections contain verified selectors from the live DOM. Use ONLY these selectors in your action blocks. The content is real and current.`
       : SYSTEM_BASE;
 
     const llmMessages = [
