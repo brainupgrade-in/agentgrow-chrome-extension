@@ -1,0 +1,39 @@
+# ── Build output ──────────────────────────────────────────────────────────────
+dist/
+
+# ── Dependencies ──────────────────────────────────────────────────────────────
+node_modules/
+
+# ── Internal / sensitive docs (not part of the open-source release) ───────────
+abacusai-chrome-ext.md
+chrome-extensions-dev-best-practices.md
+agentgrow.io-chrome-extension-design.md
+
+# ── Claude Code local config ─────────────────────────────────────────────────
+.claude/
+
+# ── Environment & secrets ─────────────────────────────────────────────────────
+.env
+.env.*
+*.pem
+*.key
+
+# ── Test artifacts ────────────────────────────────────────────────────────────
+coverage/
+playwright-report/
+test-results/
+
+# ── Build artifacts ───────────────────────────────────────────────────────────
+*.zip
+*.crx
+*.tgz
+
+# ── OS / editor junk ─────────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+*~
+.idea/
+.vscode/
+*.code-workspace

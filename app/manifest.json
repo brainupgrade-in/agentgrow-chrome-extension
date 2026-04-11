@@ -1,0 +1,80 @@
+{
+  "manifest_version": 3,
+  "name": "AgentGrow",
+  "version": "0.1.0",
+  "description": "Open-source AI browser assistant — any LLM, any site. No subscriptions. No lock-in.",
+
+  "icons": {
+    "16":  "public/icons/icon16.png",
+    "32":  "public/icons/icon32.png",
+    "48":  "public/icons/icon48.png",
+    "128": "public/icons/icon128.png"
+  },
+
+  "action": {
+    "default_icon": {
+      "16":  "public/icons/icon16.png",
+      "32":  "public/icons/icon32.png"
+    },
+    "default_title": "AgentGrow"
+  },
+
+  "background": {
+    "service_worker": "src/background/index.ts",
+    "type": "module"
+  },
+
+  "side_panel": {
+    "default_path": "src/sidepanel/index.html"
+  },
+
+  "options_ui": {
+    "page": "src/options/index.html",
+    "open_in_tab": true
+  },
+
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["src/content/index.ts"],
+      "run_at": "document_idle",
+      "all_frames": false
+    }
+  ],
+
+  "permissions": [
+    "identity",
+    "storage",
+    "tabs",
+    "tabGroups",
+    "sidePanel",
+    "activeTab",
+    "scripting",
+    "alarms",
+    "contextMenus",
+    "notifications"
+  ],
+
+  "host_permissions": ["<all_urls>"],
+
+  "web_accessible_resources": [],
+
+  "oauth2": {
+    "client_id": "1088798291609-e95e1put9gp75s25o8c25l65kr9defv8.apps.googleusercontent.com",
+    "scopes": ["openid", "email", "profile"]
+  },
+
+  "content_security_policy": {
+    "extension_pages": "script-src 'self'; object-src 'none'; base-uri 'none';"
+  },
+
+  "commands": {
+    "open-side-panel": {
+      "suggested_key": {
+        "default": "Ctrl+Shift+Y",
+        "mac": "Command+Shift+Y"
+      },
+      "description": "Open AgentGrow side panel"
+    }
+  }
+}
