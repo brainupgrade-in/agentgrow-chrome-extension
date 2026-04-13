@@ -105,11 +105,12 @@ Presets defined in `src/core/types/provider.ts` (`PROVIDER_PRESETS`). Each prese
 ## Source Layout
 
 ```
+README.md         public-facing repo intro — install-unpacked instructions, security brief, issues link
 dist/             built extension — load unpacked from here (ID: gdjoeliamfdblfefkcjcbipfcdoddebc)
 store-listing.md  CWS listing copy + privacy disclosures
 store-assets/     CWS graphics: icon-128, screenshots (5), promo tiles, marquee
-agentgrow-v0.1.0.zip   CWS submission package
-SHA256SUMS.txt    SHA-256 hash of the submission zip
+agentgrow-v0.1.0.zip   CWS submission package (also attached to GitHub Release v0.1.0)
+SHA256SUMS.txt    SHA-256 hash of the submission zip (also attached to GitHub Release v0.1.0)
 app/              full extension source (Vite + crxjs, run all commands from here)
   scripts/
     zip.mjs           CWS zip builder (pnpm build:zip)
@@ -437,6 +438,8 @@ First-class features — not afterthoughts. Full specification in design doc §6
 - ✅ Ollama Cloud support — api.ollama.com with API key, auto-shows key field for non-localhost
 - ✅ Page reader — fillable fields + clickable elements with verified CSS selectors, contenteditable detection, UI noise filtering, line deduplication
 - ✅ CWS submission — v0.1.0 zip uploaded, store listing + screenshots + privacy disclosures prepared
+- ✅ GitHub Release v0.1.0 — tag pushed, zip + SHA256SUMS.txt attached (https://github.com/brainupgrade-in/agentgrow-chrome-extension/releases/tag/v0.1.0)
+- ✅ README.md — public-facing install-unpacked instructions, security brief, feedback/issues link
 - ⬜ Multi-tab group summary
 - ⬜ Prompt templates
 - ⬜ Full test suite + reliability e2e
