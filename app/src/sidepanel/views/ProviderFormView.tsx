@@ -46,6 +46,9 @@ export function ProviderFormView({ editing, onBack, onSaved }: ProviderFormViewP
   const [saving,    setSaving]    = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [errors,    setErrors]    = useState<Partial<FormState>>({});
+  const [fetchedModels, setFetchedModels] = useState<string[]>([]);
+  const [fetchingModels, setFetchingModels] = useState(false);
+  const [fetchModelsError, setFetchModelsError] = useState<string | null>(null);
 
   const preset: ProviderPreset | undefined = PROVIDER_PRESETS.find(p => p.id === form.presetId);
 
@@ -75,6 +78,43 @@ export function ProviderFormView({ editing, onBack, onSaved }: ProviderFormViewP
     if (!form.model.trim()) errs.model = 'Required';
     setErrors(errs);
     return Object.keys(errs).length === 0;
+  }
+
+  // Load cached models for this baseUrl (instant dropdown on re-open)
+  useEffect(() => {
+    if (!form.baseUrl) { setFetchedModels([]); return; }
+    const key = `modelsCache:${form.baseUrl}`;
+    chrome.storage.local.get(key).then(store => {
+      const entry = store[key] as { models?: string[] } | undefined;
+      if (entry?.models && entry.models.length > 0) setFetchedModels(entry.models);
+      else setFetchedModels([]);
+    }).catch(() => setFetchedModels([]));
+  }, [form.baseUrl]);
+
+  async function handleFetchModels() {
+    if (!form.baseUrl) return;
+    setFetchingModels(true);
+    setFetchModelsError(null);
+    const res = await sendMessage<{ models: string[] }>({
+      type:    MessageType.PROVIDER_LIST_MODELS,
+      source:  'sidepanel',
+      payload: {
+        baseUrl: form.baseUrl,
+        type:    preset?.type ?? 'openai-compatible',
+        ...(form.apiKey ? { apiKey: form.apiKey } : {}),
+        ...(isEdit && !form.apiKey && editing?.hasApiKey ? { providerId: editing.id } : {}),
+      },
+    });
+    setFetchingModels(false);
+    if (res.success && res.data?.models && res.data.models.length > 0) {
+      setFetchedModels(res.data.models);
+      // If current model isn't in the list, auto-select the first one
+      if (!res.data.models.includes(form.model)) {
+        set('model', res.data.models[0]!);
+      }
+    } else {
+      setFetchModelsError(res.error ?? 'No models returned');
+    }
   }
 
   async function handleTest() {
@@ -223,36 +263,55 @@ export function ProviderFormView({ editing, onBack, onSaved }: ProviderFormViewP
 
         {/* Model */}
         <Field label="Model" error={errors.model}>
-          {preset && preset.models.length > 0 ? (
-            <div className="space-y-1.5">
-              <select
-                value={form.model}
-                onChange={e => set('model', e.target.value)}
-                className="ag-input"
-              >
-                {preset.models.map(m => (
-                  <option key={m} value={m}>{m}</option>
-                ))}
-                <option value="__custom__">Custom model ID…</option>
-              </select>
-              {form.model === '__custom__' && (
-                <input
-                  type="text"
-                  placeholder="Enter model ID"
-                  className="ag-input font-mono text-xs"
-                  onChange={e => set('model', e.target.value)}
-                />
-              )}
-            </div>
-          ) : (
-            <input
-              type="text"
-              value={form.model}
-              onChange={e => set('model', e.target.value)}
-              placeholder="llama3.2, gpt-4o, claude-3-5-sonnet…"
-              className="ag-input font-mono text-xs"
-            />
-          )}
+          {(() => {
+            const presetModels = preset?.models ?? [];
+            const combined = [...new Set([...presetModels, ...fetchedModels])];
+            const hasList = combined.length > 0;
+            return (
+              <div className="space-y-1.5">
+                {hasList ? (
+                  <select
+                    value={combined.includes(form.model) ? form.model : '__custom__'}
+                    onChange={e => set('model', e.target.value === '__custom__' ? '' : e.target.value)}
+                    className="ag-input"
+                  >
+                    {combined.map(m => (
+                      <option key={m} value={m}>{m}</option>
+                    ))}
+                    <option value="__custom__">Custom model ID…</option>
+                  </select>
+                ) : null}
+                {(!hasList || !combined.includes(form.model)) && (
+                  <input
+                    type="text"
+                    value={form.model === '__custom__' ? '' : form.model}
+                    onChange={e => set('model', e.target.value)}
+                    placeholder="llama3.2, gpt-4o, claude-3-5-sonnet…"
+                    className="ag-input font-mono text-xs"
+                  />
+                )}
+                {form.baseUrl && (
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => void handleFetchModels()}
+                      disabled={fetchingModels}
+                      className="text-xs text-ag-accent hover:underline disabled:opacity-50 inline-flex items-center gap-1"
+                    >
+                      {fetchingModels && <Loader2 size={11} className="animate-spin" />}
+                      {fetchingModels ? 'Fetching models…' : (fetchedModels.length > 0 ? 'Refresh models from endpoint' : 'Fetch models from endpoint')}
+                    </button>
+                    {fetchedModels.length > 0 && (
+                      <span className="text-xs text-ag-sub">{fetchedModels.length} discovered</span>
+                    )}
+                  </div>
+                )}
+                {fetchModelsError && (
+                  <p className="text-xs text-ag-error">{fetchModelsError}</p>
+                )}
+              </div>
+            );
+          })()}
         </Field>
 
         {/* API Key — show when preset requires it, custom, edit, or non-localhost Ollama */}

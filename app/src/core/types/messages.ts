@@ -18,6 +18,8 @@ export enum MessageType {
   DOM_HIGHLIGHT_TEXT = 'DOM_HIGHLIGHT_TEXT',  // highlight text in page
   DOM_INSERT_TEXT    = 'DOM_INSERT_TEXT',     // insert text at cursor/selection
   DOM_CLEAR_MARKS    = 'DOM_CLEAR_MARKS',     // remove all highlights/marks
+  DOM_ACTIVITY_SHOW  = 'DOM_ACTIVITY_SHOW',   // show "controlling this tab" toast
+  DOM_ACTIVITY_HIDE  = 'DOM_ACTIVITY_HIDE',   // hide toast for a given activity id
 
   // Page context (legacy — kept for compatibility)
   GET_PAGE_CONTENT = 'GET_PAGE_CONTENT',
@@ -29,6 +31,7 @@ export enum MessageType {
   PROVIDER_DELETE = 'PROVIDER_DELETE',
   PROVIDER_LIST   = 'PROVIDER_LIST',
   PROVIDER_TEST   = 'PROVIDER_TEST',
+  PROVIDER_LIST_MODELS = 'PROVIDER_LIST_MODELS',
 
   // Conversation
   CONVERSATION_LIST   = 'CONVERSATION_LIST',

@@ -13,7 +13,8 @@ AgentGrow is an open-source Chrome extension (Manifest V3) that **automates comm
 - **Bring your own LLM** — OpenRouter, OpenAI, Anthropic, Groq, Google Gemini, Ollama (local or Cloud), or any OpenAI-compatible endpoint.
 - **Live DOM read/write** — works directly on the adjacent tab. No screenshots, no snapshots.
 - **Private by design** — API keys encrypted at rest (AES-GCM-256) and never leave the service worker. Zero data sent to AgentGrow servers.
-- **Action safety mode** — "Ask before acting" by default; every form fill or click requires your approval.
+- **Action safety mode** — "Ask before acting" by default; every form fill or click requires your approval. A visible in-page toast with a Stop button appears whenever the extension is controlling the tab.
+- **Dynamic model discovery** — fetches available models from any endpoint. No more guessing model IDs for custom or self-hosted providers.
 - **Open source** — full source in this repo. Reproducible builds with published SHA-256 hash.
 
 ### Core use cases

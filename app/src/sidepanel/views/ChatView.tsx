@@ -343,6 +343,7 @@ export function ChatView({ user, onSignOut, onSettings }: ChatViewProps) {
       model:      activeModel,
       messages:   chatHistory,
       context:    context || undefined,
+      windowId:   ctx.windowId ?? undefined,
     });
   }
 
@@ -739,12 +740,27 @@ interface ModelDropdownProps {
 }
 
 function ModelDropdown({ providers, activeProviderId, activeModel, onSelect, onManage }: ModelDropdownProps) {
-  // Build model lists: use preset models if available, otherwise just the configured model
+  const [cache, setCache] = useState<Record<string, string[]>>({});
+
+  useEffect(() => {
+    const keys = providers.map(p => `modelsCache:${p.baseUrl}`);
+    if (keys.length === 0) return;
+    chrome.storage.local.get(keys).then(store => {
+      const next: Record<string, string[]> = {};
+      for (const p of providers) {
+        const entry = store[`modelsCache:${p.baseUrl}`] as { models?: string[] } | undefined;
+        if (entry?.models) next[p.baseUrl] = entry.models;
+      }
+      setCache(next);
+    }).catch(() => {});
+  }, [providers]);
+
+  // Build model lists: preset + cached fetched + configured model
   function getModels(p: ProviderConfigPublic): string[] {
     const preset = PROVIDER_PRESETS.find(pr => p.baseUrl.startsWith(pr.baseUrl) && pr.id !== 'custom');
     const presetModels = preset?.models ?? [];
-    // Always include the provider's configured model + preset models, deduplicated
-    const all = [p.model, ...presetModels];
+    const cached = cache[p.baseUrl] ?? [];
+    const all = [p.model, ...presetModels, ...cached];
     return [...new Set(all)];
   }
 

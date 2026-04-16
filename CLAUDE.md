@@ -27,7 +27,7 @@ Build a Chrome extension (Manifest V3) that helps users automate repetitive brow
 1. **Side panel chat with streaming** — persistent AI chat alongside any webpage; SSE streaming (OpenAI-compatible providers) + NDJSON streaming (Ollama) via named Port `llm-stream`
 2. **Conversation persistence** — active conversation saved to `chrome.storage.local`, restored on panel reopen
 3. **Smart auto-context** — auto-reads page content + text selection automatically; no manual toggles needed
-4. **Multi-model dropdown** — switch models in 1 click; shows all preset models per provider
+4. **Multi-model dropdown** — switch models in 1 click; shows all preset models per provider + dynamically fetched models from any endpoint
 5. **Chat UX** — New Chat button, copy message to clipboard, retry failed messages, timestamps on hover
 6. **DOM write** — form fill (React/Angular/Vue compatible via native setter + `InputEvent` + full event suite), contenteditable support (Telegram, Slack, Gmail, Notion), text highlight, cursor insert
 7. **DOM click & navigate** — click any button/link by CSS selector, scrollIntoView, React-compatible MouseEvent dispatch
@@ -39,6 +39,8 @@ Build a Chrome extension (Manifest V3) that helps users automate repetitive brow
 13. **Friendly error messages** — 401 → "Invalid API key", 429 → "Rate limited", 404 → "Model not found", 5xx → "Server error"; retry button on all errors
 14. **Error boundary** — wraps entire side panel; React crashes show recovery UI instead of blank screen
 15. **Page reader** — extracts fillable fields + clickable elements with verified CSS selectors, contenteditable detection, UI noise filtering, line deduplication
+16. **Dynamic model discovery** — "Fetch models from endpoint" button in provider form; fetches `/v1/models` (OpenAI-compatible) or `/api/tags` (Ollama); cached per-provider; chat header dropdown merges preset + fetched models; works with private network fallback
+17. **In-page activity toast** — shadow-DOM toast at bottom of active tab showing "AgentGrow is working/filling/clicking/typing on this tab" with pulsing indicator + **Stop** button; appears during LLM streaming and DOM write operations; Stop aborts the stream and clears all toasts
 
 ---
 
@@ -75,7 +77,7 @@ Side Panel (React)  ←═══ Port ════════ Service Worker  �
 - `src/background/` — Service Worker: message router, LLM calls, **ProviderManager**, **KeyVault**, DOM relay, auth
 - `src/sidepanel/` — React app: chat UI, settings, provider form, sign-in gate
   - `components/ErrorBoundary.tsx` — React error boundary wrapping entire side panel
-- `src/content/` — Content script: **DOM write only** — form fill, click, highlight, insert + `__PING__` readiness check (reads done via `chrome.scripting.executeScript` inline from service worker)
+- `src/content/` — Content script: **DOM write + activity toast** — form fill, click, highlight, insert, `__PING__` readiness check, shadow-DOM activity indicator with Stop button (reads done via `chrome.scripting.executeScript` inline from service worker)
 - `src/options/` — Options page: privacy dashboard, audit log, about
 - `src/core/` — Shared: provider interfaces, **dom types**, canonical types, utilities
 
@@ -84,6 +86,7 @@ Side Panel (React)  ←═══ Port ════════ Service Worker  �
 - API keys never reach content scripts, popup, or UI components
 - One-shot operations use `sendMessage`; streaming uses a named `Port` (`llm-stream`)
 - **All features are gated behind Google authentication** — unauthenticated users see only the sign-in screen
+- **In-page activity toast** — shadow-DOM element injected by the content script; service worker drives it via `DOM_ACTIVITY_SHOW` / `DOM_ACTIVITY_HIDE` messages during LLM streaming and DOM write operations; Stop button sends `CHAT_STOP` to abort the stream
 
 ---
 
@@ -99,6 +102,8 @@ All providers implement `ILLMProvider` (`src/core/providers/ILLMProvider.ts`): `
 **Built-in presets (7):** OpenRouter · OpenAI · Anthropic · Groq · Google Gemini · Ollama (local) · Custom
 
 Presets defined in `src/core/types/provider.ts` (`PROVIDER_PRESETS`). Each preset includes: base URL, curated model list, key placeholder, docs URL, and `requiresKey` flag. Managed via `ProviderManager.ts` (service worker) + `providerStore.ts` (Zustand, side panel).
+
+**Dynamic model discovery:** The provider form has a "Fetch models from endpoint" button that sends `PROVIDER_LIST_MODELS` to the service worker. The SW fetches `/models` (OpenAI-compatible) or `/api/tags` (Ollama), parses the response, and caches model IDs per base URL in `chrome.storage.local` (key: `modelsCache:{baseUrl}`). The chat header dropdown merges preset models + cached fetched models. Works with private network fallback (same as `PROVIDER_TEST`).
 
 ---
 
@@ -139,7 +144,8 @@ app/              full extension source (Vite + crxjs, run all commands from her
       utils/
         messaging.ts        typed sendMessage() helper
     content/
-      index.ts          DOM WRITE only — fill forms, click elements, highlight, insert text
+      index.ts          DOM WRITE + activity toast — fill forms, click elements, highlight,
+                        insert text, shadow-DOM "controlling this tab" indicator with Stop button
                         + __PING__ handler for content script readiness check
     options/
       main.tsx          settings page stub
@@ -267,7 +273,7 @@ Hard rules enforced in every PR. See design doc §9 for threat model and full CS
 16. Wrap all untrusted page content with `=== PAGE CONTEXT ===` delimiters. Truncate to `MAX_CONTEXT_CHARS`.
 
 ### F. Content Script Safety
-17. Content script handles **write operations only** (form fill, click, highlight, insert). DOM reads are performed via `chrome.scripting.executeScript` inline functions from the service worker (`readPageDirect`, `readSelectionDirect`) — no content script involvement for reads.
+17. Content script handles **write operations + activity toast** (form fill, click, highlight, insert, in-page indicator). DOM reads are performed via `chrome.scripting.executeScript` inline functions from the service worker (`readPageDirect`, `readSelectionDirect`) — no content script involvement for reads.
 18. Sanitize DOM text before sending to the service worker. Strip `<script>`, `<style>`, event attributes.
 
 ### L. Action Safety
@@ -282,6 +288,12 @@ Hard rules enforced in every PR. See design doc §9 for threat model and full CS
 37. `DOM_FILL_FORM`, `DOM_CLICK`, and other DOM write message types originate from the service worker (after auth gate) — never directly from the page.
 38. Text highlighted via `<mark class="agentgrow-highlight">` must be clearable; never remove marks without `parent.normalize()` to avoid orphan text nodes.
 39. `insertTextAtCursor` uses `document.execCommand('insertText')` only for contenteditable — deprecated but still the only safe cross-framework method; guard with `isContentEditable` check.
+
+### M. In-Page Activity Toast
+43. Activity toast uses a **shadow-DOM** element with a closed `ShadowRoot` — isolated from host page CSS and cannot be manipulated by page scripts.
+44. Toast is controlled exclusively by `DOM_ACTIVITY_SHOW` / `DOM_ACTIVITY_HIDE` messages from the service worker — never by page JavaScript.
+45. The Stop button sends `CHAT_STOP` via `chrome.runtime.sendMessage` — content script cannot directly access the port or abort controller.
+46. `CHAT_STOP` from content scripts is treated as privileged (goes through the authenticated message router). It aborts all in-flight `AbortController` instances and broadcasts `DOM_ACTIVITY_HIDE` to all tabs.
 
 ### G. Content Security Policy
 19. CSP: `"script-src 'self'; object-src 'none'; base-uri 'none';"` — no eval, no inline, no CDN, no base-tag injection.
@@ -322,6 +334,8 @@ Hard rules enforced in every PR. See design doc §9 for threat model and full CS
 - [ ] Raw Google OAuth token never sent outside the service worker
 - [ ] DOM write targets validated (only form elements, valid CSS selector, guarded with try/catch)
 - [ ] New DOM_* message types added to `DOM_RELAY_TYPES` set in service worker
+- [ ] Activity toast shows during new DOM operations (wrap with `setActivity()`)
+- [ ] Activity toast cleaned up in `finally` blocks — no leaked "controlling" state
 
 ---
 
@@ -350,6 +364,7 @@ The extension must degrade gracefully at every layer — not silently. See desig
 | Message list | `react-window` virtualisation for 500+ messages. Auto-scroll only when user is at bottom |
 | Offline detection | `useNetworkStatus` disables input + shows banner when offline. Localhost providers exempt |
 | Context invalidation | `chrome.runtime.id` polled every 10s. Non-dismissable reload banner on invalidation |
+| Activity toast cleanup | `setActivity(hide)` in `finally` blocks + port `onDisconnect`. `CHAT_STOP` broadcasts clear to all tabs |
 
 ### Stability Checklist (pre-PR)
 
@@ -361,6 +376,7 @@ The extension must degrade gracefully at every layer — not silently. See desig
 - [ ] New React views are wrapped in `<ErrorBoundary>`
 - [ ] Content script failures time out gracefully (never block chat)
 - [ ] Token streaming goes through `useStreamBuffer` (no per-token state updates)
+- [ ] Activity toast cleaned up on port disconnect, stream abort, and CHAT_STOP
 
 ---
 
@@ -440,6 +456,8 @@ First-class features — not afterthoughts. Full specification in design doc §6
 - ✅ CWS submission — v0.1.0 zip uploaded, store listing + screenshots + privacy disclosures prepared
 - ✅ GitHub Release v0.1.0 — tag pushed, zip + SHA256SUMS.txt attached (https://github.com/brainupgrade-in/agentgrow-chrome-extension/releases/tag/v0.1.0)
 - ✅ README.md — public-facing install-unpacked instructions, security brief, feedback/issues link
+- ✅ Dynamic model discovery — "Fetch models from endpoint" for any OpenAI-compatible or Ollama provider; cached per-base-URL; merged into chat header dropdown
+- ✅ In-page activity toast — shadow-DOM indicator on active tab during LLM streaming and DOM writes, with Stop button to abort the stream
 - ⬜ Multi-tab group summary
 - ⬜ Prompt templates
 - ⬜ Full test suite + reliability e2e

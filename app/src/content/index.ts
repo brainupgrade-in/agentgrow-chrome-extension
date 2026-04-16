@@ -26,6 +26,108 @@ import type {
 
 const MARK_CLASS = 'agentgrow-highlight';
 
+// ── Activity toast (shadow DOM — can't be styled by host page) ───────────────
+
+const activeActivities = new Map<string, string>(); // id -> label
+let toastHost: HTMLDivElement | null = null;
+let toastShadow: ShadowRoot | null = null;
+
+function ensureToast(): ShadowRoot {
+  if (toastShadow) return toastShadow;
+  toastHost = document.createElement('div');
+  toastHost.id = 'agentgrow-activity-host';
+  toastHost.style.cssText = 'all: initial; position: fixed; left: 0; right: 0; bottom: 0; z-index: 2147483647; pointer-events: none;';
+  toastShadow = toastHost.attachShadow({ mode: 'closed' });
+  toastShadow.innerHTML = `
+    <style>
+      :host, * { box-sizing: border-box; }
+      .wrap { display: flex; justify-content: center; padding: 0 0 16px; pointer-events: none; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+      .toast {
+        pointer-events: auto;
+        display: flex; align-items: center; gap: 10px;
+        background: #0e0e11; color: #e5e7eb;
+        border: 1px solid #2a2a33;
+        padding: 8px 10px 8px 14px; border-radius: 999px;
+        box-shadow: 0 10px 30px rgba(0,0,0,0.4);
+        font-size: 12px; line-height: 1.2;
+        max-width: 90vw;
+      }
+      .dot {
+        width: 8px; height: 8px; border-radius: 50%;
+        background: #22d3a8;
+        box-shadow: 0 0 0 0 rgba(34,211,168,0.6);
+        animation: pulse 1.4s ease-out infinite;
+      }
+      @keyframes pulse {
+        0%   { box-shadow: 0 0 0 0 rgba(34,211,168,0.6); }
+        100% { box-shadow: 0 0 0 10px rgba(34,211,168,0); }
+      }
+      .label { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 320px; }
+      .label b { color: #22d3a8; font-weight: 600; }
+      button.stop {
+        appearance: none; border: none; cursor: pointer;
+        background: #2a2a33; color: #fca5a5;
+        font: inherit; font-weight: 600; font-size: 11px;
+        padding: 4px 10px; border-radius: 999px;
+        display: inline-flex; align-items: center; gap: 4px;
+      }
+      button.stop:hover { background: #3a3a45; color: #fecaca; }
+      button.stop svg { width: 10px; height: 10px; }
+    </style>
+    <div class="wrap">
+      <div class="toast" role="status" aria-live="polite">
+        <span class="dot" aria-hidden="true"></span>
+        <span class="label"><b>AgentGrow</b> <span id="what">is working on this tab</span></span>
+        <button class="stop" type="button" aria-label="Stop">
+          <svg viewBox="0 0 10 10" aria-hidden="true"><rect width="10" height="10" fill="currentColor"/></svg>
+          Stop
+        </button>
+      </div>
+    </div>
+  `;
+  const stopBtn = toastShadow.querySelector('button.stop');
+  stopBtn?.addEventListener('click', () => {
+    try {
+      chrome.runtime.sendMessage({
+        type:      'CHAT_STOP',
+        requestId: crypto.randomUUID(),
+        payload:   {},
+        source:    'content',
+      });
+    } catch { /* SW gone — nothing we can do */ }
+    activeActivities.clear();
+    hideToast();
+  });
+  document.documentElement.appendChild(toastHost);
+  return toastShadow;
+}
+
+function renderToast() {
+  if (!toastShadow) return;
+  const what = toastShadow.querySelector('#what');
+  if (what) {
+    const labels = [...activeActivities.values()].filter(Boolean);
+    what.textContent = labels[labels.length - 1] ?? 'is working on this tab';
+  }
+  if (toastHost) toastHost.style.display = '';
+}
+
+function hideToast() {
+  if (toastHost) toastHost.style.display = 'none';
+}
+
+function showActivity(id: string, label: string) {
+  activeActivities.set(id, label);
+  ensureToast();
+  renderToast();
+}
+
+function hideActivity(id: string) {
+  activeActivities.delete(id);
+  if (activeActivities.size === 0) hideToast();
+  else renderToast();
+}
+
 // ── WRITE: Form fill ──────────────────────────────────────────────────────────
 
 /**
@@ -377,6 +479,21 @@ chrome.runtime.onMessage.addListener((msg: unknown, _sender, sendResponse) => {
     case MessageType.DOM_CLEAR_MARKS:
       sendResponse({ success: true, data: clearMarks() });
       break;
+
+    case MessageType.DOM_ACTIVITY_SHOW: {
+      const p = (m.payload ?? {}) as { id?: string; label?: string };
+      if (p.id) showActivity(p.id, p.label ?? 'is working on this tab');
+      sendResponse({ success: true });
+      break;
+    }
+
+    case MessageType.DOM_ACTIVITY_HIDE: {
+      const p = (m.payload ?? {}) as { id?: string };
+      if (p.id) hideActivity(p.id);
+      else { activeActivities.clear(); hideToast(); }
+      sendResponse({ success: true });
+      break;
+    }
 
     default:
       return false; // not handled — don't keep channel open

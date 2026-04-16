@@ -638,6 +638,44 @@ async function clickDirect(tabId: number, selectors: string[]): Promise<AgentGro
   }
 }
 
+// ─── Activity toast (in-page "controlling this tab" indicator) ──────────────
+
+async function setActivity(
+  tabId: number | undefined | null,
+  id: string,
+  show: boolean,
+  label?: string,
+): Promise<void> {
+  if (!tabId) return;
+  try { await ensureContentScript(tabId); } catch { return; }
+  const payload = show ? { id, label: label ?? 'is working on this tab' } : { id };
+  const type = show ? MessageType.DOM_ACTIVITY_SHOW : MessageType.DOM_ACTIVITY_HIDE;
+  try {
+    await new Promise<void>(resolve => {
+      chrome.tabs.sendMessage(tabId, { type, payload }, () => {
+        void chrome.runtime.lastError;
+        resolve();
+      });
+    });
+  } catch { /* tab gone */ }
+}
+
+async function clearActivityEverywhere(): Promise<void> {
+  try {
+    const tabs = await chrome.tabs.query({});
+    await Promise.all(tabs.map(t => {
+      if (!t.id) return;
+      return new Promise<void>(resolve => {
+        chrome.tabs.sendMessage(
+          t.id!,
+          { type: MessageType.DOM_ACTIVITY_HIDE, payload: {} },
+          () => { void chrome.runtime.lastError; resolve(); },
+        );
+      });
+    }));
+  } catch { /* ignore */ }
+}
+
 // ─── Message Router ───────────────────────────────────────────────────────────
 
 chrome.runtime.onMessage.addListener(
@@ -694,16 +732,29 @@ async function handleMessage(
       return { success: false, error: 'No accessible tab found. Navigate to a regular webpage.' };
     }
 
-    // READ operations: use direct scripting (no content script needed)
-    if (msg.type === MessageType.DOM_READ_PAGE) {
-      return readPageDirect(tab.id);
-    }
-    if (msg.type === MessageType.DOM_READ_SELECTION) {
-      return readSelectionDirect(tab.id);
-    }
+    // Show toast for WRITE operations (fill, click, insert, highlight).
+    // Reads are fast and silent; toast is reserved for user-visible control.
+    const showForWrite = DOM_WRITE_TYPES.has(msg.type) && msg.type !== MessageType.DOM_CLEAR_MARKS;
+    const activityId = showForWrite ? `dom-${msg.requestId}` : null;
+    const label = msg.type === MessageType.DOM_FILL_FORM ? 'is filling a form on this tab'
+                : msg.type === MessageType.DOM_CLICK ? 'is clicking on this tab'
+                : msg.type === MessageType.DOM_INSERT_TEXT ? 'is typing on this tab'
+                : 'is controlling this tab';
+    if (activityId) await setActivity(tab.id, activityId, true, label);
 
-    // WRITE operations: relay through content script
-    return relayToDomScript(tab.id, msg.type, msg.payload);
+    try {
+      // READ operations: use direct scripting (no content script needed)
+      if (msg.type === MessageType.DOM_READ_PAGE) {
+        return await readPageDirect(tab.id);
+      }
+      if (msg.type === MessageType.DOM_READ_SELECTION) {
+        return await readSelectionDirect(tab.id);
+      }
+      // WRITE operations: relay through content script
+      return await relayToDomScript(tab.id, msg.type, msg.payload);
+    } finally {
+      if (activityId) await setActivity(tab.id, activityId, false);
+    }
   }
 
   // ── Authenticated routes ───────────────────────────────────────────────────
@@ -781,6 +832,102 @@ async function handleMessage(
       }
     }
 
+    case MessageType.PROVIDER_LIST_MODELS: {
+      const { baseUrl, type, apiKey, providerId } = msg.payload as {
+        baseUrl:     string;
+        type:        string;
+        apiKey?:     string;
+        providerId?: string;
+      };
+
+      let resolvedKey = apiKey ?? null;
+      if (!resolvedKey && providerId) {
+        resolvedKey = await ProviderManager.getApiKey(providerId);
+      }
+
+      const url = type === 'ollama' ? `${baseUrl}/api/tags` : `${baseUrl}/models`;
+      const headers: Record<string, string> = {};
+      if (resolvedKey) headers['Authorization'] = `Bearer ${resolvedKey}`;
+
+      function parseModels(json: unknown): string[] {
+        if (!json || typeof json !== 'object') return [];
+        const j = json as Record<string, unknown>;
+        // Ollama: { models: [{ name: '...', model: '...' }] }
+        if (Array.isArray(j['models'])) {
+          return (j['models'] as Array<Record<string, unknown>>)
+            .map(m => (m['name'] ?? m['model']) as string | undefined)
+            .filter((v): v is string => typeof v === 'string' && v.length > 0);
+        }
+        // OpenAI-compatible: { data: [{ id: '...' }] }
+        if (Array.isArray(j['data'])) {
+          return (j['data'] as Array<Record<string, unknown>>)
+            .map(m => m['id'] as string | undefined)
+            .filter((v): v is string => typeof v === 'string' && v.length > 0);
+        }
+        return [];
+      }
+
+      async function cacheModels(models: string[]) {
+        try {
+          const key = `modelsCache:${baseUrl}`;
+          await chrome.storage.local.set({ [key]: { models, fetchedAt: Date.now() } });
+        } catch { /* quota or other — ignore */ }
+      }
+
+      try {
+        const res = await fetch(url, { signal: AbortSignal.timeout(8000), headers });
+        if (res.ok) {
+          const json = await res.json().catch(() => null);
+          const models = parseModels(json);
+          await cacheModels(models);
+          return { success: true, data: { models } };
+        }
+        return { success: false, error: `HTTP ${res.status}` };
+      } catch (e) {
+        // Private network fallback — execute fetch from an active tab
+        try {
+          const tabs = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
+          if (tabs[0]?.id) {
+            const results = await chrome.scripting.executeScript({
+              target: { tabId: tabs[0].id },
+              args: [url, resolvedKey],
+              func: async (u: string, key: string | null) => {
+                try {
+                  const h: Record<string, string> = {};
+                  if (key) h['Authorization'] = `Bearer ${key}`;
+                  const r = await fetch(u, { signal: AbortSignal.timeout(8000), headers: h });
+                  if (!r.ok) return { ok: false, status: r.status };
+                  const j = await r.json().catch(() => null);
+                  return { ok: true, json: j };
+                } catch (err) {
+                  return { ok: false, error: String(err) };
+                }
+              },
+            });
+            const r = results?.[0]?.result as { ok: boolean; json?: unknown; status?: number; error?: string } | undefined;
+            if (r?.ok) {
+              const models = parseModels(r.json);
+              await cacheModels(models);
+              return { success: true, data: { models } };
+            }
+            if (r?.status) return { success: false, error: `HTTP ${r.status}` };
+            if (r?.error) return { success: false, error: r.error };
+          }
+        } catch { /* fallback failed */ }
+        return { success: false, error: String(e) };
+      }
+    }
+
+    case MessageType.CHAT_STOP: {
+      // Abort any in-flight streams and clear all on-page activity toasts.
+      for (const [, ctrl] of activeStreams) {
+        try { ctrl.abort(); } catch { /* already aborted */ }
+      }
+      activeStreams.clear();
+      await clearActivityEverywhere();
+      return { success: true };
+    }
+
     // Legacy
     case MessageType.GET_PAGE_CONTENT: {
       const windowId = msg.payload['windowId'] as number | undefined;
@@ -808,6 +955,7 @@ chrome.runtime.onConnect.addListener(port => {
     model: string;
     messages: Array<{ role: string; content: string }>;
     context?: string;
+    windowId?: number;
   }) => {
     if (msg.type !== 'chat') return;
 
@@ -946,12 +1094,20 @@ The FILLABLE FIELDS and CLICKABLE ELEMENTS sections contain verified selectors f
     const controller = new AbortController();
     activeStreams.set(msg.requestId, controller);
 
+    // Resolve the adjacent tab for the in-page activity toast
+    const activityTab = await getAdjacentTab(msg.windowId).catch(() => null);
+    const activityId  = `stream-${msg.requestId}`;
+    if (activityTab?.id) {
+      void setActivity(activityTab.id, activityId, true, 'is working on this tab');
+    }
+
     // Abort fetch + cancel reader when port disconnects (fixes memory leak)
     let reader: ReadableStreamDefaultReader<Uint8Array> | null = null;
     port.onDisconnect.addListener(() => {
       controller.abort();
       reader?.cancel().catch(() => {});
       activeStreams.delete(msg.requestId);
+      if (activityTab?.id) void setActivity(activityTab.id, activityId, false);
     });
 
     try {
@@ -1030,6 +1186,7 @@ The FILLABLE FIELDS and CLICKABLE ELEMENTS sections contain verified selectors f
       reader?.cancel().catch(() => {});
       reader = null;
       activeStreams.delete(msg.requestId);
+      if (activityTab?.id) await setActivity(activityTab.id, activityId, false);
     }
 
     } catch (outerErr) {
