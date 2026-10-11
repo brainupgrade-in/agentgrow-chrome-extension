@@ -11,10 +11,10 @@ Open-source MV3 Chrome extension: an AI browser assistant that **automates brows
 
 Update this section at the end of any session that changes state.
 
-- **Version:** v0.1.1 — resubmitted to CWS 2026-04-21, **approval pending**. GitHub Release v0.1.1 (tag + zip + `SHA256SUMS.txt`) **not yet cut**.
-- **Gates (2026-10-11):** `typecheck` ✅ · `lint` ✅ (1 known warning: hook deps in `ChatView.tsx`) · `test` ✅ (1 file, `core/utils/url.test.ts`) · `build` ✅ · `test:e2e` ❌ (no Playwright config or tests) · no CI.
+- **Version:** v0.1.2 — built 2026-10-11 (zip SHA-256 `0848351b…`), GitHub Release cut; **CWS upload by the user pending** (also update the Privacy practices tab — disclosures now name the Gheware AI preset). v0.1.1 (CWS resubmission of 2026-04-21, review status unconfirmed) has its GitHub Release at tag `v0.1.1` = `c063fd8`, using the exact submitted zip.
+- **Gates (2026-10-11):** `typecheck` ✅ · `lint` ✅ (1 known warning: hook deps in `ChatView.tsx`) · `test` ✅ (2 files: `url.test.ts`, `errors.test.ts`) · `audit --prod` ✅ (full `audit` has highs/criticals in dev tooling only — vite, vitest, eslint, crxjs) · `build` ✅ · `test:e2e` ❌ (no Playwright config or tests) · no CI.
 - **Docs vs code:** much of the design doc and the old CLAUDE.md described *target* architecture. What is actually implemented is listed in `app/CLAUDE.md` § "Implemented vs target" — trust that, not the design doc.
-- **Next up:** cut GitHub Release v0.1.1 · revise the monetization spec (private repo) after its review · options page (T1/T5/T6 trust features are unbuilt) · Playwright e2e.
+- **Next up:** upload v0.1.2 to CWS · revise the monetization spec (private repo) after its review · options page (T1/T5/T6 trust features are unbuilt) · Playwright e2e.
 
 ---
 

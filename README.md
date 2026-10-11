@@ -1,6 +1,6 @@
 # AgentGrow — Open-Source AI Browser Assistant
 
-**Version: v0.1.1** · [Homepage](https://devops.gheware.com/agentgrow/) · [Chrome Web Store (in review)](https://chromewebstore.google.com/)
+**Version: v0.1.2** · [Homepage](https://devops.gheware.com/agentgrow/) · [Chrome Web Store (in review)](https://chromewebstore.google.com/)
 
 AgentGrow is an open-source Chrome extension (Manifest V3) that **automates common browser tasks** using AI — filling forms, drafting emails, summarizing articles, extracting data, and navigating complex sites. It connects to **any LLM provider** via a user-supplied API URL and key.
 
@@ -12,7 +12,7 @@ AgentGrow is an open-source Chrome extension (Manifest V3) that **automates comm
 
 - **Bring your own LLM** — OpenRouter, OpenAI, Anthropic, Groq, Google Gemini, Ollama (local or Cloud), or any OpenAI-compatible endpoint.
 - **Live DOM read/write** — works directly on the adjacent tab. No screenshots, no snapshots.
-- **Private by design** — API keys encrypted at rest (AES-GCM-256) and never leave the service worker. Zero data sent to AgentGrow servers.
+- **Private by design** — API keys encrypted at rest (AES-GCM-256) and never leave the service worker. No backend: page content goes only to the LLM endpoint you choose. (The optional *Gheware AI* preset is a prepaid endpoint operated by the publisher — used only if you select it.)
 - **Action safety mode** — "Ask before acting" by default; every form fill or click requires your approval. A visible in-page toast with a Stop button appears whenever the extension is controlling the tab.
 - **Dynamic model discovery** — fetches available models from any endpoint. No more guessing model IDs for custom or self-hosted providers.
 - **Open source** — full source in this repo. Reproducible builds with published SHA-256 hash.
@@ -72,7 +72,7 @@ Security is a first-class concern. Key protections:
 - **Sanitized markdown** — `rehype-sanitize` on all rendered LLM output. No `innerHTML`, no `dangerouslySetInnerHTML` anywhere.
 - **Action safety mode** — DOM writes (fill / click / submit) require explicit user approval by default.
 - **HTTPS-only providers** — `http://` accepted only for `localhost` and private IP ranges.
-- **No telemetry** — zero network traffic to AgentGrow servers. Audit log of LLM calls is stored locally and viewable in Options.
+- **No telemetry** — no analytics or tracking traffic; the only network calls are to Google sign-in and your chosen LLM endpoint. Audit log of LLM calls is stored locally and viewable in Options.
 - **Reproducible builds** — submission zip SHA-256 published alongside each release.
 
 A full threat model, permissions rationale, and the complete security rule-set are documented in [`CLAUDE.md`](./CLAUDE.md) and the architecture design doc.

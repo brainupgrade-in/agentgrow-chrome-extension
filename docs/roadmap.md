@@ -51,7 +51,8 @@ Moved out of the root `CLAUDE.md` on 2026-10-11. Status reflects the code at tha
 ## Phase 1 — MVP (remaining)
 
 - ⬜ v0.1.1 CWS approval (pending review)
-- ⬜ GitHub Release v0.1.1 — tag + zip + SHA256SUMS.txt (not yet pushed)
+- ✅ GitHub Release v0.1.1 — tag `v0.1.1` = `c063fd8`, exact submitted zip
+- ⬜ v0.1.2 CWS upload (built + GitHub Release cut 2026-10-11)
 - ⬜ Multi-tab group summary
 - ⬜ Prompt templates
 - ⬜ Options page — trust features T1/T3/T5/T6
