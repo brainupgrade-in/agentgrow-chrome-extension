@@ -5,7 +5,7 @@ export interface StructuredPageContent {
   description?: string;
   selection?: SelectionContext;   // present when user has text selected
   headings:   Heading[];
-  mainText:   string;            // primary readable text, max 12k chars
+  mainText:   string;            // primary readable text, max 30k chars (MAX_TEXT)
   forms:      DetectedForm[];
   codeBlocks: string[];
   links:      PageLink[];

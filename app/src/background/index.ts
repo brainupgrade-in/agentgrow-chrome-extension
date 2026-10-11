@@ -95,7 +95,7 @@ async function readPageDirect(tabId: number): Promise<AgentGrowResponse> {
     const results = await chrome.scripting.executeScript({
       target: { tabId },
       func: () => {
-        const MAX_TEXT = 8_000;
+        const MAX_TEXT = 30_000;
 
         // ── Main text extraction ────────────────────────────────────────
         const root = document.querySelector('main')
@@ -1101,9 +1101,35 @@ The FILLABLE FIELDS and CLICKABLE ELEMENTS sections contain verified selectors f
       void setActivity(activityTab.id, activityId, true, 'is working on this tab');
     }
 
+    // Reliability rules from CLAUDE.md §Streaming: 15s connect timeout + 90s idle-token
+    // timeout. Without these, a dropped SSE (proxy cut, slow first token on long contexts)
+    // looks identical to a working stream and the toast hangs forever.
+    const CONNECT_MS = 15_000;
+    const IDLE_MS    = 90_000;
+    let stalled      = false;
+    let sawReasoning = false;
+    let sawContent   = false;
+    let idleTimer: ReturnType<typeof setTimeout> | null = null;
+    let connectTimer: ReturnType<typeof setTimeout> | null = setTimeout(() => {
+      stalled = true;
+      try { controller.abort(); } catch { /* already aborted */ }
+    }, CONNECT_MS);
+    const armIdle = () => {
+      if (idleTimer) clearTimeout(idleTimer);
+      idleTimer = setTimeout(() => {
+        stalled = true;
+        try { controller.abort(); } catch { /* already aborted */ }
+      }, IDLE_MS);
+    };
+    const clearTimers = () => {
+      if (connectTimer) { clearTimeout(connectTimer); connectTimer = null; }
+      if (idleTimer)    { clearTimeout(idleTimer);    idleTimer    = null; }
+    };
+
     // Abort fetch + cancel reader when port disconnects (fixes memory leak)
     let reader: ReadableStreamDefaultReader<Uint8Array> | null = null;
     port.onDisconnect.addListener(() => {
+      clearTimers();
       controller.abort();
       reader?.cancel().catch(() => {});
       activeStreams.delete(msg.requestId);
@@ -1121,6 +1147,9 @@ The FILLABLE FIELDS and CLICKABLE ELEMENTS sections contain verified selectors f
         }),
         signal: controller.signal,
       });
+      // Connected — swap connect timeout for idle-token timeout
+      if (connectTimer) { clearTimeout(connectTimer); connectTimer = null; }
+      armIdle();
 
       if (!res.ok) {
         const errText = await res.text().catch(() => '');
@@ -1142,10 +1171,18 @@ The FILLABLE FIELDS and CLICKABLE ELEMENTS sections contain verified selectors f
       reader = res.body.getReader();
       const decoder = new TextDecoder();
       let buffer = '';
+      // reasoning→content transition flags are declared in the outer scope above
+      // so the catch handler can read them when building the stall-error message.
+      const send = (token: string) => {
+        armIdle();
+        port.postMessage({ type: 'token', requestId: msg.requestId, token });
+      };
 
       while (!controller.signal.aborted) {
         const { done, value } = await reader.read();
         if (done) break;
+        // Any byte from the server resets idle — covers SSE keepalive comments too
+        armIdle();
 
         buffer += decoder.decode(value, { stream: true });
         const lines = buffer.split('\n');
@@ -1157,9 +1194,17 @@ The FILLABLE FIELDS and CLICKABLE ELEMENTS sections contain verified selectors f
 
           if (isOllama) {
             try {
-              const obj = JSON.parse(trimmed) as { message?: { content?: string }; done?: boolean };
-              const token = obj.message?.content ?? '';
-              if (token) port.postMessage({ type: 'token', requestId: msg.requestId, token });
+              const obj = JSON.parse(trimmed) as { message?: { content?: string; thinking?: string }; done?: boolean };
+              const reasoning = obj.message?.thinking ?? '';
+              const content   = obj.message?.content ?? '';
+              if (reasoning) {
+                if (!sawReasoning) { sawReasoning = true; send('> 🤔 *Thinking…*\n>\n> '); }
+                send(reasoning.replace(/\n/g, '\n> '));
+              }
+              if (content) {
+                if (sawReasoning && !sawContent) { sawContent = true; send('\n\n'); }
+                send(content);
+              }
               if (obj.done) break;
             } catch { /* skip malformed lines */ }
           } else {
@@ -1167,9 +1212,18 @@ The FILLABLE FIELDS and CLICKABLE ELEMENTS sections contain verified selectors f
             const data = trimmed.slice(6);
             if (data === '[DONE]') break;
             try {
-              const obj = JSON.parse(data) as { choices?: Array<{ delta?: { content?: string } }> };
-              const token = obj.choices?.[0]?.delta?.content ?? '';
-              if (token) port.postMessage({ type: 'token', requestId: msg.requestId, token });
+              const obj = JSON.parse(data) as { choices?: Array<{ delta?: { content?: string; reasoning_content?: string; reasoning?: string } }> };
+              const delta     = obj.choices?.[0]?.delta ?? {};
+              const reasoning = delta.reasoning_content ?? delta.reasoning ?? '';
+              const content   = delta.content ?? '';
+              if (reasoning) {
+                if (!sawReasoning) { sawReasoning = true; send('> 🤔 *Thinking…*\n>\n> '); }
+                send(reasoning.replace(/\n/g, '\n> '));
+              }
+              if (content) {
+                if (sawReasoning && !sawContent) { sawContent = true; send('\n\n'); }
+                send(content);
+              }
             } catch { /* skip malformed lines */ }
           }
         }
@@ -1179,10 +1233,19 @@ The FILLABLE FIELDS and CLICKABLE ELEMENTS sections contain verified selectors f
         port.postMessage({ type: 'done', requestId: msg.requestId });
       }
     } catch (e) {
-      if ((e as Error).name !== 'AbortError') {
+      const isAbort = (e as Error).name === 'AbortError';
+      if (stalled) {
+        // We aborted ourselves because the stream stalled — surface a clear error
+        // instead of letting the user stare at a frozen activity toast.
+        const reason = sawReasoning || sawContent
+          ? 'Connection dropped mid-response — the provider may have closed the stream. Try again.'
+          : 'No response from provider — the request timed out before any tokens arrived. The page context may be too large or the model is overloaded.';
+        try { port.postMessage({ type: 'error', requestId: msg.requestId, error: reason }); } catch { /* port closed */ }
+      } else if (!isAbort) {
         try { port.postMessage({ type: 'error', requestId: msg.requestId, error: String(e) }); } catch { /* port already closed */ }
       }
     } finally {
+      clearTimers();
       reader?.cancel().catch(() => {});
       reader = null;
       activeStreams.delete(msg.requestId);
