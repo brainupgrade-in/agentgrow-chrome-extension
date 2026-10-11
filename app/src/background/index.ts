@@ -11,6 +11,7 @@ import { ProviderManager } from './ProviderManager.js';
 import { KeyVault }        from './KeyVault.js';
 import { AgentGrowMessageSchema, MessageType } from '../core/types/messages.js';
 import type { AgentGrowResponse } from '../core/types/messages.js';
+import { friendlyHttpError } from '../core/utils/errors.js';
 
 // ─── DOM message types that are relayed to the content script ─────────────────
 // DOM write types relayed to the content script (reads handled inline via executeScript)
@@ -1153,12 +1154,8 @@ The FILLABLE FIELDS and CLICKABLE ELEMENTS sections contain verified selectors f
 
       if (!res.ok) {
         const errText = await res.text().catch(() => '');
-        const friendly = res.status === 401 ? 'Invalid API key — check your key in Settings'
-          : res.status === 403 ? 'Access denied — your API key may lack permissions for this model'
-          : res.status === 429 ? 'Rate limited — too many requests, try again in a moment'
-          : res.status === 404 ? `Model not found — "${msg.model}" may not be available on this provider`
-          : res.status >= 500 ? `Provider server error (${res.status}) — try again later`
-          : `API error ${res.status}: ${errText.slice(0, 200)}`;
+        const isGheware = provider.baseUrl.startsWith('https://api.gheware-ai.com/');
+        const friendly = friendlyHttpError(res.status, errText, msg.model, isGheware);
         port.postMessage({ type: 'error', requestId: msg.requestId, error: friendly });
         return;
       }

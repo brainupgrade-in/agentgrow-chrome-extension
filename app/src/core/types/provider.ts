@@ -150,6 +150,19 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
     docsUrl:         'https://ollama.com/library',
   },
   {
+    // Prepaid Gheware AI credit (Qwen 3.6 via api.gheware-ai.com). Keys are sold by the
+    // Gheware token service and only work for the gw-* models.
+    id:           'gheware',
+    name:         'Gheware AI',
+    type:         'openai-compatible',
+    baseUrl:      'https://api.gheware-ai.com/v1',
+    defaultModel: 'gw-qwen36-chat',
+    models:       ['gw-qwen36-chat', 'gw-qwen36'],
+    requiresKey:     true,
+    keyPlaceholder:  'sk-... (from your Gheware AI purchase)',
+    docsUrl:         'https://devops.gheware.com/agentgrow/',
+  },
+  {
     id:           'custom',
     name:         'Custom / Self-hosted',
     type:         'openai-compatible',
