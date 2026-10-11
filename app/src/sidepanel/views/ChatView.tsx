@@ -1,5 +1,5 @@
 import { useEffect, useState, useRef, useCallback } from 'react';
-import { Settings, ChevronDown, Check, FileText, Loader2, Square, RotateCcw, Copy, CheckCheck, MessageSquarePlus, ShieldCheck, ShieldAlert, AlertTriangle } from 'lucide-react';
+import { Settings, ChevronDown, Check, FileText, Loader2, Square, RotateCcw, Copy, CheckCheck, MessageSquarePlus, ShieldCheck, ShieldAlert, AlertTriangle, ExternalLink } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import rehypeSanitize from 'rehype-sanitize';
@@ -12,6 +12,8 @@ import { z } from 'zod';
 import { useProviderStore } from '../store/providerStore.js';
 import { usePageContext } from '../hooks/usePageContext.js';
 import { sendMessage } from '../utils/messaging.js';
+import { GHEWARE_CREDIT_USED_UP } from '../../core/utils/errors.js';
+import { GHEWARE_BUY_URL } from '../../core/utils/gheware.js';
 
 interface ChatViewProps {
   user:       PublicUserInfo;
@@ -701,6 +703,16 @@ function MessageBubble({ message, isGenerating, onRetry }: {
               <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeSanitize]}>
                 {message.content}
               </ReactMarkdown>
+              {isError && message.content.includes(GHEWARE_CREDIT_USED_UP) && (
+                <a
+                  href={GHEWARE_BUY_URL}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1 text-xs font-semibold text-ag-accent hover:underline mt-1"
+                >
+                  Top up credits <ExternalLink size={11} />
+                </a>
+              )}
             </div>
           ) : isGenerating ? (
             <div className="flex items-center gap-1.5 text-ag-sub py-0.5">

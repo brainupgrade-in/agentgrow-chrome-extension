@@ -18,6 +18,7 @@ Stack: Vite 5 + `@crxjs/vite-plugin` · TypeScript strict · React 18 · Zustand
 | `src/core/types/{auth,dom,conversation}.ts` | — | Shared types |
 | `src/core/utils/storage.ts` | 32 | `safeStorageSet` (quota guard) |
 | `src/core/utils/url.ts` | 52 | `isAllowedProviderUrl`, `providerSecurityTier` (+ `url.test.ts`) |
+| `src/core/utils/gheware.ts` | 40 | Gheware AI: buy/balance URLs, `isGhewareUrl` (exact host gate for sending a key to the token service), `parseBalance` (+ test) |
 | `src/sidepanel/App.tsx` | 73 | Screen router: chat / settings / provider-add / provider-edit; sign-in gate |
 | `src/sidepanel/views/ChatView.tsx` | 834 | Chat shell, auto page/selection context, streaming render, action approve/cancel, model dropdown, conversation persistence (`activeConversation` in `chrome.storage.local`) |
 | `src/sidepanel/views/ProviderFormView.tsx` | 446 | Add/edit provider, presets, test connection, "Fetch models from endpoint" |

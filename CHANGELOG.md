@@ -1,5 +1,17 @@
 # Changelog
 
+## v0.1.3 — 2026-10-11
+
+### Added
+- **Buy Gheware AI credits from the extension:** "Buy credits or top up" link on the Gheware AI provider form, "Buy credits" / "Top up" on its Settings row, and a "Top up credits" link under the credit-used-up chat error. All open https://tokens.gheware-ai.com/buy in a new tab; payment and key delivery stay on the token service.
+- Remaining Gheware AI credit shown on the provider's Settings row (`PROVIDER_BALANCE` → `tokens.gheware-ai.com/v1/balance`, sent only for a provider whose host is exactly `api.gheware-ai.com`).
+
+### Changed
+- Gheware gateway detection is an exact https + hostname match (`core/utils/gheware.ts`, tested) instead of a URL prefix test.
+- Disclosures (README, store listing) cover the balance check.
+
+No permission changes.
+
 ## v0.1.2 — 2026-10-11
 
 ### Added

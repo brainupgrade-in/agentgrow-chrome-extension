@@ -160,7 +160,7 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
     models:       ['gw-qwen36-chat', 'gw-qwen36'],
     requiresKey:     true,
     keyPlaceholder:  'sk-... (from your Gheware AI purchase)',
-    docsUrl:         'https://devops.gheware.com/agentgrow/',
+    docsUrl:         'https://tokens.gheware-ai.com/buy',
   },
   {
     id:           'custom',

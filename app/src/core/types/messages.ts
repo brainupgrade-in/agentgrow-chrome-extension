@@ -32,6 +32,7 @@ export enum MessageType {
   PROVIDER_LIST   = 'PROVIDER_LIST',
   PROVIDER_TEST   = 'PROVIDER_TEST',
   PROVIDER_LIST_MODELS = 'PROVIDER_LIST_MODELS',
+  PROVIDER_BALANCE     = 'PROVIDER_BALANCE',      // Gheware AI prepaid credit left
 
   // Conversation
   CONVERSATION_LIST   = 'CONVERSATION_LIST',

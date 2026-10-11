@@ -2,6 +2,10 @@ import { useEffect, useState } from 'react';
 import { ChevronRight, Plus, Trash2, Star, ArrowLeft, ExternalLink, CheckCircle2 } from 'lucide-react';
 import { useProviderStore } from '../store/providerStore.js';
 import type { ProviderConfigPublic } from '../../core/types/provider.js';
+import { MessageType } from '../../core/types/messages.js';
+import { GHEWARE_BUY_URL, isGhewareUrl } from '../../core/utils/gheware.js';
+import type { GhewareBalance } from '../../core/utils/gheware.js';
+import { sendMessage } from '../utils/messaging.js';
 
 interface SettingsViewProps {
   onBack:      () => void;
@@ -145,6 +149,21 @@ function ProviderRow({ provider, deleting, onEdit, onDelete, onSetDefault }: Pro
     try { return new URL(provider.baseUrl).hostname; }
     catch { return provider.baseUrl; }
   })();
+  const isGheware = isGhewareUrl(provider.baseUrl);
+  const [balance, setBalance] = useState<GhewareBalance | null>(null);
+  const [balanceError, setBalanceError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!isGheware || !provider.hasApiKey) return;
+    void sendMessage<GhewareBalance>({
+      type:    MessageType.PROVIDER_BALANCE,
+      source:  'sidepanel',
+      payload: { providerId: provider.id },
+    }).then(res => {
+      if (res.success && res.data) setBalance(res.data);
+      else setBalanceError(res.error ?? 'Balance unavailable');
+    });
+  }, [isGheware, provider.id, provider.hasApiKey]);
 
   return (
     <div className="bg-ag-surface border border-ag-border rounded-lg overflow-hidden">
@@ -172,6 +191,12 @@ function ProviderRow({ provider, deleting, onEdit, onDelete, onSetDefault }: Pro
           <div className="text-xs text-ag-sub mt-0.5 font-mono truncate">
             {host} · {provider.model}
           </div>
+          {balance && (
+            <div className={`text-xs mt-0.5 ${balance.remainingUsd > 0 && balance.active ? 'text-ag-accent' : 'text-ag-error'}`}>
+              {balance.active ? `$${balance.remainingUsd.toFixed(2)} credit left` : 'Key inactive'}
+            </div>
+          )}
+          {balanceError && <div className="text-xs text-ag-sub mt-0.5">{balanceError}</div>}
         </div>
 
         <ChevronRight size={14} className="text-ag-sub shrink-0" />
@@ -187,6 +212,17 @@ function ProviderRow({ provider, deleting, onEdit, onDelete, onSetDefault }: Pro
             <Star size={11} />
             Set default
           </button>
+        )}
+        {isGheware && (
+          <a
+            href={GHEWARE_BUY_URL}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="flex items-center gap-1 text-[11px] text-ag-accent hover:text-ag-success transition-colors px-2 py-1 rounded hover:bg-ag-muted"
+          >
+            <ExternalLink size={11} />
+            {provider.hasApiKey ? 'Top up' : 'Buy credits'}
+          </a>
         )}
         <div className="flex-1" />
         <button

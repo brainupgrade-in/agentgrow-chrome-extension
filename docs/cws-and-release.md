@@ -49,7 +49,9 @@ Everything about the Chrome Web Store (CWS) listing, the manifest, Google OAuth,
 - **Dev OAuth client** (fast): create a second Chrome App OAuth client in Google Cloud Console with Application ID = `gdjoeliamfdblfefkcjcbipfcdoddebc`, copy its `client_id`, temporarily swap it into `manifest.json` for local builds. Never commit the dev `client_id`.
 - **`"key"` pinning** (thorough): add the CWS public key to `manifest.json` as a `"key"` field so the local unpacked install takes ID `eeheooklokdjhdcnladhomkhmklcnokd` too. Requires reading the public key from the CWS-signed CRX — feasible only after the item is live.
 
-**v0.1.2 — built 2026-10-11, upload pending.** No permission changes. Adds the Gheware AI preset, a prepaid endpoint operated by the publisher, so the data disclosures changed: `store-listing.md` § Privacy Practices and § Host permissions now name it. The CWS Privacy practices tab must be updated to match on upload.
+**v0.1.2 — built 2026-10-11, GitHub Release only (superseded by v0.1.3 before CWS upload).** No permission changes. Adds the Gheware AI preset, a prepaid endpoint operated by the publisher, so the data disclosures changed: `store-listing.md` § Privacy Practices and § Host permissions now name it. The CWS Privacy practices tab must be updated to match on upload.
+
+**v0.1.3 — built 2026-10-11, upload pending.** No permission changes. Buy/top-up links to `tokens.gheware-ai.com/buy` and a credit-balance check that sends a Gheware AI provider's key (only) to `tokens.gheware-ai.com/v1/balance` — disclosed in `store-listing.md`.
 
 ---
 
@@ -77,8 +79,8 @@ All assets for Chrome Web Store submission are prepared and included in the repo
 | Screenshots (5) | `store-assets/screenshot-{1..5}.png` |
 | Promo tiles (440x280, 920x680, 1400x560) | `store-assets/promo-tile-*.png` |
 | Marquee promo (1400x560) | `store-assets/marquee-promo-1400x560.png` |
-| Submission zip (current) | `agentgrow-v0.1.2.zip` (SHA-256: `0848351b87d7de1d9db161a05a949d2c01a7df7e60e8ad9dcac8757abe77c978`) |
-| Submission zip (superseded) | `agentgrow-v0.1.1.zip` (SHA-256: `1c0bdbb26cdcb1bd67374deb9ea843bb29db925156de2d747d0980576165ec93`, attached to GitHub Release v0.1.1), `agentgrow-v0.1.0.zip` — kept on disk as historical record |
+| Submission zip (current) | `agentgrow-v0.1.3.zip` (SHA-256: `71c3963ac46e552ba5d56103c3f7cd8be272f9d8978920d1c012f5edd11d1af5`) |
+| Submission zip (superseded) | `agentgrow-v0.1.2.zip` (SHA-256: `0848351b87d7de1d9db161a05a949d2c01a7df7e60e8ad9dcac8757abe77c978`, GitHub Release only, never uploaded to CWS), `agentgrow-v0.1.1.zip` (SHA-256: `1c0bdbb26cdcb1bd67374deb9ea843bb29db925156de2d747d0980576165ec93`, attached to GitHub Release v0.1.1), `agentgrow-v0.1.0.zip` — kept on disk as historical record |
 | Zip hash (current zip only) | `SHA256SUMS.txt` |
 | Zip build script | `app/scripts/zip.mjs` |
 

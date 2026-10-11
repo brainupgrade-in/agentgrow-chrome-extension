@@ -6,12 +6,15 @@
  * Rule: ensureAuthenticated() must be called before any privileged message handler.
  */
 
+import { z } from 'zod';
+
 import { AuthService }     from './AuthService.js';
 import { ProviderManager } from './ProviderManager.js';
 import { KeyVault }        from './KeyVault.js';
 import { AgentGrowMessageSchema, MessageType } from '../core/types/messages.js';
 import type { AgentGrowResponse } from '../core/types/messages.js';
 import { friendlyHttpError } from '../core/utils/errors.js';
+import { GHEWARE_BALANCE_URL, isGhewareUrl, parseBalance } from '../core/utils/gheware.js';
 
 // ─── DOM message types that are relayed to the content script ─────────────────
 // DOM write types relayed to the content script (reads handled inline via executeScript)
@@ -833,6 +836,28 @@ async function handleMessage(
       }
     }
 
+    case MessageType.PROVIDER_BALANCE: {
+      // The key goes to the token service only for a saved Gheware AI provider.
+      const body = z.object({ providerId: z.string().min(1) }).safeParse(msg.payload);
+      if (!body.success) return { success: false, error: 'Invalid payload' };
+      const config = await ProviderManager.getConfig(body.data.providerId);
+      if (!config || !isGhewareUrl(config.baseUrl)) return { success: false, error: 'Not a Gheware AI provider' };
+      const key = await ProviderManager.getApiKey(config.id);
+      if (!key) return { success: false, error: 'No API key saved' };
+      try {
+        const res = await fetch(GHEWARE_BALANCE_URL, {
+          signal:  AbortSignal.timeout(8000),
+          headers: { Authorization: `Bearer ${key}` },
+        });
+        if (res.status === 401) return { success: false, error: 'Key not recognised by Gheware AI' };
+        if (!res.ok) return { success: false, error: `Balance unavailable (${res.status})` };
+        const balance = parseBalance(await res.json());
+        return balance ? { success: true, data: balance } : { success: false, error: 'Balance unavailable' };
+      } catch {
+        return { success: false, error: 'Balance unavailable — check your connection' };
+      }
+    }
+
     case MessageType.PROVIDER_LIST_MODELS: {
       const { baseUrl, type, apiKey, providerId } = msg.payload as {
         baseUrl:     string;
@@ -1154,7 +1179,7 @@ The FILLABLE FIELDS and CLICKABLE ELEMENTS sections contain verified selectors f
 
       if (!res.ok) {
         const errText = await res.text().catch(() => '');
-        const isGheware = provider.baseUrl.startsWith('https://api.gheware-ai.com/');
+        const isGheware = isGhewareUrl(provider.baseUrl);
         const friendly = friendlyHttpError(res.status, errText, msg.model, isGheware);
         port.postMessage({ type: 'error', requestId: msg.requestId, error: friendly });
         return;

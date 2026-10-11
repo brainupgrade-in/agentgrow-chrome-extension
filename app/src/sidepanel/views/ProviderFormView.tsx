@@ -349,7 +349,7 @@ export function ProviderFormView({ editing, onBack, onSaved }: ProviderFormViewP
                 rel="noopener noreferrer"
                 className="inline-flex items-center gap-1 text-xs text-ag-accent hover:underline mt-1.5"
               >
-                Get API key <ExternalLink size={11} />
+                {form.presetId === 'gheware' ? 'Buy credits or top up' : 'Get API key'} <ExternalLink size={11} />
               </a>
             )}
           </Field>

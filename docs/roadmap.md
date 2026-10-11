@@ -52,7 +52,10 @@ Moved out of the root `CLAUDE.md` on 2026-10-11. Status reflects the code at tha
 
 - ⬜ v0.1.1 CWS approval (pending review)
 - ✅ GitHub Release v0.1.1 — tag `v0.1.1` = `c063fd8`, exact submitted zip
-- ⬜ v0.1.2 CWS upload (built + GitHub Release cut 2026-10-11)
+- ✅ v0.1.2 GitHub Release (never uploaded to CWS)
+- ✅ Gheware AI credits in-extension: buy/top-up links + balance (v0.1.3)
+- ⬜ v0.1.3 CWS upload
+- ⬜ Gheware AI key auto-claim + balance chip in chat header (Phase 1b; needs token-service endpoint)
 - ⬜ Multi-tab group summary
 - ⬜ Prompt templates
 - ⬜ Options page — trust features T1/T3/T5/T6
