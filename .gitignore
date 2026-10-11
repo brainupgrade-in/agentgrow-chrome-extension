@@ -41,3 +41,7 @@ Thumbs.db
 .idea/
 .vscode/
 *.code-workspace
+.env
+
+# Business/monetization docs live in private repo brainupgrade-in/agentgrow-chrome-extension-business
+docs/monetization-spec.md
