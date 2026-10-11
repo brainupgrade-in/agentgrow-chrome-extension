@@ -1,0 +1,6 @@
+# Gitignored files Claude Code copies into new worktrees (gitignore syntax).
+# These internal docs are referenced from CLAUDE.md but not committed.
+agentgrow.io-chrome-extension-design.md
+abacusai-chrome-ext.md
+chrome-extensions-dev-best-practices.md
+store-listing.md

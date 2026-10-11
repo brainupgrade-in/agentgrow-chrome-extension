@@ -12,6 +12,8 @@ const manifest = {
   },
 };
 
+const devPort = Number(process.env.VITE_PORT ?? 5173);
+
 export default defineConfig({
   plugins: [
     react(),
@@ -27,11 +29,12 @@ export default defineConfig({
       },
     },
   },
+  // VITE_PORT lets parallel worktrees run `pnpm dev` side by side (default 5173).
   server: {
-    port: 5173,
+    port: devPort,
     strictPort: true,
     hmr: {
-      port: 5173,
+      port: devPort,
     },
   },
 });

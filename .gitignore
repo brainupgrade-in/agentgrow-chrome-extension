@@ -13,8 +13,9 @@ store-assets/
 SHA256SUMS.txt
 agentgrow-*.zip
 
-# ── Claude Code local config ─────────────────────────────────────────────────
-.claude/
+# ── Claude Code local config (shared .claude/ config is committed) ─────────────
+.claude/settings.local.json
+.claude/worktrees/
 
 # ── Environment & secrets ─────────────────────────────────────────────────────
 .env
