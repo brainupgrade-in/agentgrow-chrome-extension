@@ -31,6 +31,8 @@ Update this section at the end of any session that changes state.
 
 Gitignored docs exist only in the main checkout; `.worktreeinclude` / `app/scripts/setup-worktree.sh` copy them into worktrees.
 
+**Harness (`.claude/`, committed):** `settings.json` allows the gates and read-only git, asks before `git push`, `pnpm build:zip` and edits to `app/manifest.json`, and runs a typecheck hook after every edit under `app/src` (`hooks/typecheck-on-edit.sh` — fix what it reports before moving on). Project skills: `cws-release`, `add-dom-action`, `add-provider-preset`. Personal overrides go in the gitignored `.claude/settings.local.json`.
+
 ---
 
 ## Architecture

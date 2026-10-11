@@ -1,0 +1,42 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(pnpm typecheck)",
+      "Bash(pnpm lint)",
+      "Bash(pnpm test)",
+      "Bash(pnpm build)",
+      "Bash(pnpm -C app typecheck)",
+      "Bash(pnpm -C app lint)",
+      "Bash(pnpm -C app test)",
+      "Bash(pnpm -C app build)",
+      "Bash(pnpm install --frozen-lockfile)",
+      "Bash(bash app/scripts/setup-worktree.sh)",
+      "Bash(git status *)",
+      "Bash(git diff *)",
+      "Bash(git log *)",
+      "Bash(git show *)",
+      "Bash(git worktree list)",
+      "Bash(git branch --show-current)"
+    ],
+    "ask": [
+      "Bash(git push *)",
+      "Bash(pnpm build:zip)",
+      "Edit(**/app/manifest.json)"
+    ]
+  },
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write|MultiEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/typecheck-on-edit.sh",
+            "timeout": 90,
+            "statusMessage": "Typechecking…"
+          }
+        ]
+      }
+    ]
+  }
+}
