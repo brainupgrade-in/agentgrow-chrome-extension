@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "AgentGrow",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Open-source AI browser assistant — any LLM, any site. No subscriptions. No lock-in.",
 
   "icons": {
@@ -46,13 +46,9 @@
     "identity",
     "storage",
     "tabs",
-    "tabGroups",
     "sidePanel",
     "activeTab",
-    "scripting",
-    "alarms",
-    "contextMenus",
-    "notifications"
+    "scripting"
   ],
 
   "host_permissions": ["<all_urls>"],

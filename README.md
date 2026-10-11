@@ -1,6 +1,6 @@
 # AgentGrow — Open-Source AI Browser Assistant
 
-**Version: v0.1.0** · [Homepage](https://devops.gheware.com/agentgrow/) · [Chrome Web Store (in review)](https://chromewebstore.google.com/)
+**Version: v0.1.1** · [Homepage](https://devops.gheware.com/agentgrow/) · [Chrome Web Store (in review)](https://chromewebstore.google.com/)
 
 AgentGrow is an open-source Chrome extension (Manifest V3) that **automates common browser tasks** using AI — filling forms, drafting emails, summarizing articles, extracting data, and navigating complex sites. It connects to **any LLM provider** via a user-supplied API URL and key.
 
@@ -31,7 +31,7 @@ The extension has been submitted to the Chrome Web Store. While it is in review,
 
 ### Option A — install from a pre-built zip
 
-1. Download `agentgrow-v0.1.0.zip` from the [GitHub Releases](https://github.com/brainupgrade-in/agentgrow-chrome-extension/releases) page.
+1. Download the latest `agentgrow-v<version>.zip` from the [GitHub Releases](https://github.com/brainupgrade-in/agentgrow-chrome-extension/releases) page.
 2. Verify the SHA-256 hash against `SHA256SUMS.txt` (optional but recommended).
 3. Unzip to a folder of your choice.
 4. Open `chrome://extensions` in Chrome.

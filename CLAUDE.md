@@ -1,6 +1,6 @@
 # CLAUDE.md — AgentGrow Chrome Extension
 
-**Version: v0.1.0** — submitted to Chrome Web Store for review.
+**Version: v0.1.1** — resubmitted to Chrome Web Store after v0.1.0 rejection (see "CWS review history" below).
 
 Open-source AI browser assistant that **automates common browser tasks** — filling forms, writing email drafts, creating/editing/summarizing documents, navigating complex sites — to save users time. Connects to **any LLM provider** (OpenRouter, OpenAI, Anthropic, Groq, Ollama, or any OpenAI-compatible endpoint) via user-supplied API URL + key. No subscriptions. No vendor lock-in.
 
@@ -216,8 +216,7 @@ Full annotated file tree: design doc §12.
 ## Manifest Permissions
 
 ```json
-"permissions": ["storage", "tabs", "tabGroups", "sidePanel", "activeTab",
-                "scripting", "alarms", "contextMenus", "notifications", "identity"],
+"permissions": ["identity", "storage", "tabs", "sidePanel", "activeTab", "scripting"],
 "host_permissions": ["<all_urls>"],
 "optional_host_permissions": ["<all_urls>"],
 "oauth2": {
@@ -228,7 +227,10 @@ Full annotated file tree: design doc §12.
 
 - `identity` permission enables `chrome.identity` API (Google OAuth2 flow)
 - `oauth2` block ties the extension to a Google Cloud Console OAuth2 client
-- **Extension ID: `gdjoeliamfdblfefkcjcbipfcdoddebc`** (loaded unpacked from `dist/`)
+- **Extension IDs:**
+  - Local unpacked (from `dist/`): `gdjoeliamfdblfefkcjcbipfcdoddebc`
+  - CWS published: `eeheooklokdjhdcnladhomkhmklcnokd`
+  - The Google Cloud Console OAuth Chrome App **Application ID** must be set to the CWS published ID for production sign-in to work. Local unpacked sign-in requires either a second OAuth client pinned to the unpacked ID, or a `"key"` field in `manifest.json` pinning the unpacked install to the CWS public key.
 - `host_permissions` includes `<all_urls>` — needed for `chrome.scripting.executeScript` inline page reads on any tab
 
 ### Google Cloud Console Setup (completed — branding published April 2026)
@@ -236,9 +238,27 @@ Full annotated file tree: design doc §12.
 1. Go to [Google Cloud Console](https://console.cloud.google.com/) → Create project `agentgrow`
 2. APIs & Services → OAuth consent screen → External → fill App name, support email, scopes: `openid email profile`
 3. APIs & Services → Credentials → Create credentials → OAuth client ID → Application type: **Chrome App**
-4. Application ID: `gdjoeliamfdblfefkcjcbipfcdoddebc`
+4. Application ID: `eeheooklokdjhdcnladhomkhmklcnokd` (CWS published ID — updated for v0.1.1 resubmission)
 5. Copy the `client_id` → paste into `manifest.json` `oauth2.client_id`
-6. For production CWS publish: update the ID to the published extension's ID and recreate credentials
+6. The Application ID must match the CWS-assigned extension ID, not the local unpacked ID. Sign-in in local unpacked installs requires a separate dev OAuth client or a `"key"` field in manifest pinning the unpacked install to the CWS public key.
+
+### CWS Review History
+
+**v0.1.0 — rejected 2026-04-20** (two violations):
+
+1. *Content Policies — "Unable to login"* (reference: Red Potassium). Root cause: Google Cloud Console OAuth Chrome App client's Application ID was still set to the local unpacked ID `gdjoeliamfdblfefkcjcbipfcdoddebc`. When the reviewer installed the CWS-signed package, its install ID was `eeheooklokdjhdcnladhomkhmklcnokd` — `chrome.identity.getAuthToken` rejected with `bad client id` because the two did not match. OAuth consent screen was already published ("In production"), so Testing-mode whitelisting was ruled out.
+2. *Use of Permissions — unused* (reference: Purple Potassium): `tabGroups`, `alarms`, `contextMenus`, `notifications` were declared but not referenced anywhere in the source tree.
+
+**v0.1.1 — fixes (resubmitted 2026-04-21):**
+
+- Updated OAuth Chrome App client Application ID in Google Cloud Console → `eeheooklokdjhdcnladhomkhmklcnokd`. `client_id` in `manifest.json` unchanged.
+- Removed the four unused permissions from `manifest.json`. Remaining 6 permissions (`identity`, `storage`, `tabs`, `sidePanel`, `activeTab`, `scripting`) all actively used.
+- Re-declared per-permission justifications + single-purpose + host-permissions + remote-code fields on the CWS **Privacy practices** tab (the modern dashboard has no single "reviewer notes" text box — each permission gets its own justification field). Full text lives in `store-listing.md`.
+
+**Known side effect of the OAuth Application ID fix:** Local unpacked sign-in now fails with `bad client id` because the dev install's ID (`gdjoeliamfdblfefkcjcbipfcdoddebc`) no longer matches the OAuth Application ID. This is *expected* and proves the production binding is correct. Two ways to restore local sign-in during dev:
+
+- **Dev OAuth client** (fast): create a second Chrome App OAuth client in Google Cloud Console with Application ID = `gdjoeliamfdblfefkcjcbipfcdoddebc`, copy its `client_id`, temporarily swap it into `manifest.json` for local builds. Never commit the dev `client_id`.
+- **`"key"` pinning** (thorough): add the CWS public key to `manifest.json` as a `"key"` field so the local unpacked install takes ID `eeheooklokdjhdcnladhomkhmklcnokd` too. Requires reading the public key from the CWS-signed CRX — feasible only after the item is live.
 
 ---
 
@@ -453,11 +473,13 @@ First-class features — not afterthoughts. Full specification in design doc §6
 - ✅ Private network support — test connection fallback via tab execution for 192.168.*/10.*/172.16.* servers
 - ✅ Ollama Cloud support — api.ollama.com with API key, auto-shows key field for non-localhost
 - ✅ Page reader — fillable fields + clickable elements with verified CSS selectors, contenteditable detection, UI noise filtering, line deduplication
-- ✅ CWS submission — v0.1.0 zip uploaded, store listing + screenshots + privacy disclosures prepared
+- ✅ CWS submission — v0.1.0 uploaded → rejected; v0.1.1 resubmitted with permission trim + OAuth Application ID update
 - ✅ GitHub Release v0.1.0 — tag pushed, zip + SHA256SUMS.txt attached (https://github.com/brainupgrade-in/agentgrow-chrome-extension/releases/tag/v0.1.0)
 - ✅ README.md — public-facing install-unpacked instructions, security brief, feedback/issues link
 - ✅ Dynamic model discovery — "Fetch models from endpoint" for any OpenAI-compatible or Ollama provider; cached per-base-URL; merged into chat header dropdown
 - ✅ In-page activity toast — shadow-DOM indicator on active tab during LLM streaming and DOM writes, with Stop button to abort the stream
+- ⬜ v0.1.1 CWS approval (pending review)
+- ⬜ GitHub Release v0.1.1 — tag + zip + SHA256SUMS.txt (not yet pushed)
 - ⬜ Multi-tab group summary
 - ⬜ Prompt templates
 - ⬜ Full test suite + reliability e2e
@@ -496,8 +518,9 @@ All assets for Chrome Web Store submission are prepared and included in the repo
 | Screenshots (5) | `store-assets/screenshot-{1..5}.png` |
 | Promo tiles (440x280, 920x680, 1400x560) | `store-assets/promo-tile-*.png` |
 | Marquee promo (1400x560) | `store-assets/marquee-promo-1400x560.png` |
-| Submission zip | `agentgrow-v0.1.0.zip` |
-| Zip hash | `SHA256SUMS.txt` |
+| Submission zip (current) | `agentgrow-v0.1.1.zip` (SHA-256: `1c0bdbb26cdcb1bd67374deb9ea843bb29db925156de2d747d0980576165ec93`) |
+| Submission zip (superseded) | `agentgrow-v0.1.0.zip` (kept on disk as historical record) |
+| Zip hash (current zip only) | `SHA256SUMS.txt` |
 | Zip build script | `app/scripts/zip.mjs` |
 
 ---
