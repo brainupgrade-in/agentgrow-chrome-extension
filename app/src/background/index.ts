@@ -126,7 +126,7 @@ async function readPageDirect(tabId: number): Promise<AgentGrowResponse> {
             .forEach(a => el.removeAttribute(a.name))
         );
 
-        let rawText = (clone.innerText ?? '').trim();
+        const rawText = (clone.innerText ?? '').trim();
 
         // Clean up: collapse whitespace, remove very short lines (UI labels), dedupe
         const lines = rawText.split('\n')
