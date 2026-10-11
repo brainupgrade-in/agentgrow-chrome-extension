@@ -10,7 +10,7 @@ Moved out of the root `CLAUDE.md` on 2026-10-11. Status reflects the code at tha
 - **Data Extraction** — pull structured data from any page into usable formats
 
 
-## Shipped features (v0.1.0 – v0.1.1)
+## Shipped features (v0.1.0 – v0.1.3)
 
 1. **Side panel chat with streaming** — persistent AI chat alongside any webpage; SSE streaming (OpenAI-compatible providers) + NDJSON streaming (Ollama) via named Port `llm-stream`
 2. **Conversation persistence** — active conversation saved to `chrome.storage.local`, restored on panel reopen
@@ -31,7 +31,7 @@ Moved out of the root `CLAUDE.md` on 2026-10-11. Status reflects the code at tha
 17. **In-page activity toast** — shadow-DOM toast at bottom of active tab showing "AgentGrow is working/filling/clicking/typing on this tab" with pulsing indicator + **Stop** button; appears during LLM streaming and DOM write operations; Stop aborts the stream and clears all toasts
 
 ---
-18. **Stream reliability** (post-v0.1.1, unreleased) — 15s connect / 90s idle timeouts with clear errors; reasoning/thinking tokens shown as a quoted block; page text cap raised to 30k chars
+18. **Stream reliability** (v0.1.2) — 15s connect / 90s idle timeouts with clear errors; reasoning/thinking tokens shown as a quoted block; page text cap raised to 30k chars
 
 ## Trust features
 
@@ -50,11 +50,12 @@ Moved out of the root `CLAUDE.md` on 2026-10-11. Status reflects the code at tha
 
 ## Phase 1 — MVP (remaining)
 
-- ⬜ v0.1.1 CWS approval (pending review)
+- ✅ v0.1.1 CWS review — superseded by the v0.1.3 submission
 - ✅ GitHub Release v0.1.1 — tag `v0.1.1` = `c063fd8`, exact submitted zip
 - ✅ v0.1.2 GitHub Release (never uploaded to CWS)
 - ✅ Gheware AI credits in-extension: buy/top-up links + balance (v0.1.3)
-- ⬜ v0.1.3 CWS upload
+- ✅ v0.1.3 submitted to CWS (2026-10-11)
+- ⬜ v0.1.3 CWS approval (pending review)
 - ⬜ Gheware AI key auto-claim + balance chip in chat header (Phase 1b; needs token-service endpoint)
 - ⬜ Multi-tab group summary
 - ⬜ Prompt templates

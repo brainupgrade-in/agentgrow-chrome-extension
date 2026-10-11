@@ -51,7 +51,7 @@ Everything about the Chrome Web Store (CWS) listing, the manifest, Google OAuth,
 
 **v0.1.2 — built 2026-10-11, GitHub Release only (superseded by v0.1.3 before CWS upload).** No permission changes. Adds the Gheware AI preset, a prepaid endpoint operated by the publisher, so the data disclosures changed: `store-listing.md` § Privacy Practices and § Host permissions now name it. The CWS Privacy practices tab must be updated to match on upload.
 
-**v0.1.3 — built 2026-10-11, upload pending.** No permission changes. Buy/top-up links to `tokens.gheware-ai.com/buy` and a credit-balance check that sends a Gheware AI provider's key (only) to `tokens.gheware-ai.com/v1/balance` — disclosed in `store-listing.md`.
+**v0.1.3 — submitted 2026-10-11, review pending.** No permission changes. Buy/top-up links to `tokens.gheware-ai.com/buy` and a credit-balance check that sends a Gheware AI provider's key (only) to `tokens.gheware-ai.com/v1/balance` — disclosed in `store-listing.md`. Privacy practices tab updated on submission: single purpose and host-permission text name the Gheware AI endpoint; data-usage boxes ticked: Website content, Personal communications, Authentication information, Personally identifiable information. The privacy policy (`brainupgrade-in.github.io` repo, `docs/agentgrow/privacy/`) gained § 4 "Gheware AI (Optional, Prepaid)" and lost stale claims (sync storage, prompt templates, in-extension change notice) the same day. This submission superseded the pending v0.1.1 review.
 
 ---
 

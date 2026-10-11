@@ -11,10 +11,10 @@ Open-source MV3 Chrome extension: an AI browser assistant that **automates brows
 
 Update this section at the end of any session that changes state.
 
-- **Version:** v0.1.3 — Gheware AI credits: buy/top-up links + balance in Settings (zip SHA-256 `71c3963a…`), built 2026-10-11; **CWS upload by the user pending** (also update the Privacy practices tab from `store-listing.md` — disclosures name the Gheware AI preset and its balance check). v0.1.2 has a GitHub Release but was never uploaded to CWS; v0.1.3 supersedes it. v0.1.1 (CWS resubmission of 2026-04-21, review status unconfirmed) has its GitHub Release at tag `v0.1.1` = `c063fd8`, using the exact submitted zip.
+- **Version:** v0.1.3 — Gheware AI credits: buy/top-up links + balance in Settings (zip SHA-256 `71c3963a…`), **submitted to CWS 2026-10-11, review pending**, with the Privacy practices tab updated (Gheware AI preset + balance check; privacy policy at devops.gheware.com/agentgrow/privacy/ updated the same day). v0.1.2 has a GitHub Release but was never uploaded to CWS. v0.1.1 (CWS resubmission of 2026-04-21) was superseded by the v0.1.3 submission; it has its GitHub Release at tag `v0.1.1` = `c063fd8`, using the exact submitted zip.
 - **Gates (2026-10-11):** `typecheck` ✅ · `lint` ✅ (1 known warning: hook deps in `ChatView.tsx`) · `test` ✅ (3 files: `url`, `errors`, `gheware`) · `audit --prod` ✅ (full `audit` has highs/criticals in dev tooling only — vite, vitest, eslint, crxjs) · `build` ✅ · `test:e2e` ❌ (no Playwright config or tests) · no CI.
 - **Docs vs code:** much of the design doc and the old CLAUDE.md described *target* architecture. What is actually implemented is listed in `app/CLAUDE.md` § "Implemented vs target" — trust that, not the design doc.
-- **Next up:** upload v0.1.3 to CWS · Phase 1b auto-claim of the key (needs a token-service endpoint) · revise the monetization spec (private repo) after its review · options page (T1/T5/T6 trust features are unbuilt) · Playwright e2e.
+- **Next up:** watch the v0.1.3 CWS review (rejection reasons arrive by email) · Phase 1b auto-claim of the key (needs a token-service endpoint) · revise the monetization spec (private repo) after its review · options page (T1/T5/T6 trust features are unbuilt) · Playwright e2e · fix the hardcoded `0.1.0` in Settings → About.
 
 ---
 
