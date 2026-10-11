@@ -91,4 +91,4 @@ For security-sensitive disclosures, please mark the issue accordingly or reach o
 
 ## License
 
-Open source. See repository for license details.
+MIT — see [LICENSE](LICENSE).
